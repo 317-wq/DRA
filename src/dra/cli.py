@@ -1,0 +1,348 @@
+"""CLI：dra run / show / list。
+
+终端里的进度只看事件流，和 0.2 的 SSE 消费同一份数据。
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from collections import deque
+from pathlib import Path
+
+import typer
+from rich.console import Console, Group
+from rich.live import Live
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+
+from dra import __version__
+from dra.agent import ResearchAgent
+from dra.budget import Budget
+from dra.config import Settings
+from dra.store import RunStore
+
+app = typer.Typer(
+    add_completion=False,
+    no_args_is_help=True,
+    rich_markup_mode="rich",
+    help="Deep Research Agent —— 输入主题，产出带引用的研究报告。",
+)
+console = Console()
+
+COVERAGE_ICON = {"enough": "●", "partial": "◐", "gap": "○", None: "·"}
+COVERAGE_COLOR = {"enough": "green", "partial": "yellow", "gap": "red", None: "dim"}
+
+
+class LiveView:
+    """把事件流渲染成一块会自己刷新的面板。"""
+
+    def __init__(self, topic: str, models: dict[str, str]) -> None:
+        """初始化实时视图的初始状态。"""
+        self.topic = topic
+        self.models = models
+        self.subquestions: list[dict] = []
+        self.logs: deque[str] = deque(maxlen=7)
+        self.sources = 0
+        self.tokens = 0
+        self.calls = 0
+        self.status = "启动中"
+        self.live: Live | None = None
+        self.started = time.monotonic()
+
+    def __call__(self, ev) -> None:
+        """接收事件并刷新面板。"""
+        p = ev.payload or {}
+        if ev.type == "run.started":
+            self.status = "拆题"
+        elif ev.type == "plan.ready":
+            self.subquestions = [
+                {"id": s["id"], "question": s["question"], "coverage": None, "sources": 0}
+                for s in p.get("subquestions", [])
+            ]
+            self.log(f"拆出 {len(self.subquestions)} 个子问题")
+        elif ev.type == "search.done":
+            if p.get("ok"):
+                self.log(f"检索 · {p['query'][:34]} → {p['hits']} 条")
+            else:
+                self.log(f"检索失败 · {p['query'][:24]}（{str(p.get('error'))[:40]}）")
+        elif ev.type == "fetch.done":
+            ns = p.get("sources") or []
+            if ns:
+                self.sources += len(ns)
+            self.log(f"读取 · 子问题 {p.get('subquestion')} 新增 {len(ns)} 篇")
+        elif ev.type == "analysis.done":
+            by_id = {it["id"]: it for it in p.get("items", [])}
+            for sq in self.subquestions:
+                item = by_id.get(sq["id"])
+                if item:
+                    sq["coverage"] = item.get("coverage")
+            self.log(f"分析完成（第 {p.get('round')} 轮）")
+            self.status = "写作" if all(s["coverage"] == "enough" for s in self.subquestions) else "补检索"
+        elif ev.type == "replan":
+            self.log("覆盖不足，重新规划检索式")
+        elif ev.type in ("plan.llm", "analysis.llm", "replan.llm", "write.llm"):
+            tok = p.get("tokens", {}).get("total_tokens", 0)
+            self.tokens += tok
+            self.calls += 1
+            self.log(f"{p.get('model')} · {p.get('latency_ms', 0) / 1000:.1f}s · {tok} tok")
+        elif ev.type == "run.finished":
+            self.status = "完成" if p.get("status") == "done" else "部分完成"
+        elif ev.type == "run.failed":
+            self.status = "失败"
+            self.log(f"失败：{(p.get('notes') or [''])[-1][:60]}")
+
+        if self.live is not None:
+            self.live.update(self.render())
+
+    def log(self, line: str) -> None:
+        """追加一行事件日志（保留最近若干条）。"""
+        self.logs.append(line)
+
+    def render(self):
+        """渲染标题、子问题表与事件流面板。"""
+        head = Text.assemble(
+            ("主题  ", "dim"),
+            (self.topic, "bold"),
+            ("\n"),
+            ("阶段  ", "dim"),
+            (self.status, "cyan"),
+            ("    来源  ", "dim"),
+            (str(self.sources), "bold"),
+            ("    LLM  ", "dim"),
+            (f"{self.calls} 次 / {self.tokens} tok", ""),
+            ("    用时  ", "dim"),
+            (f"{time.monotonic() - self.started:.0f}s", ""),
+        )
+
+        table = Table(box=None, pad_edge=False, show_header=False, expand=True)
+        table.add_column(width=3, no_wrap=True)
+        table.add_column(ratio=1)
+        table.add_column(width=10, no_wrap=True)
+        for sq in self.subquestions:
+            cov = sq["coverage"]
+            table.add_row(
+                Text(COVERAGE_ICON.get(cov, "·"), style=COVERAGE_COLOR.get(cov, "dim")),
+                Text(sq["question"], overflow="ellipsis", no_wrap=True),
+                Text(cov or "待分析", style=COVERAGE_COLOR.get(cov, "dim")),
+            )
+
+        body = Group(head, Text(""), table)
+        log_panel = Panel(
+            Text("\n".join(self.logs) or "等待事件…", style="dim"),
+            title="事件流",
+            border_style="bright_black",
+            height=9,
+        )
+        return Group(
+            Panel(body, title=f"Deep Research · {self.models.get('write', '')}", border_style="blue"),
+            log_panel,
+        )
+
+
+def _print_run_summary(result, settings: Settings) -> None:
+    """打印研究结束摘要面板。"""
+    ok = result.status == "done"
+    color = "green" if ok else ("yellow" if result.status == "partial" else "red")
+    table = Table(box=None, show_header=False, pad_edge=False, expand=False)
+    table.add_column(style="dim", width=10)
+    table.add_column()
+    table.add_row("run", result.run_id)
+    table.add_row("状态", Text(result.status, style=color))
+    table.add_row("耗时", f"{result.duration_s}s")
+    table.add_row("来源", f"{len(result.sources)} 篇")
+    table.add_row("引用", ", ".join(f"[{s.n}]" for s in result.sources) or "无")
+    table.add_row("token", f"{result.usage.total_tokens}（{result.usage.calls} 次调用）")
+    table.add_row("覆盖", "  ".join(f"{sq.id}:{sq.coverage or '-'}" for sq in result.subquestions))
+    table.add_row("产物", str(Path(result.report_path).parent))
+    for note in result.notes:
+        table.add_row("提示", Text(note, style="yellow"))
+    console.print(Panel(table, title="研究结束", border_style=color))
+    if result.sources:
+        console.print(f"\n[dim]查看报告：[/dim]dra show {result.run_id}")
+        console.print(f"[dim]完整轨迹：[/dim]dra show {result.run_id} --trace\n")
+
+
+@app.command()
+def run(
+    topic: str = typer.Argument(..., help="研究主题"),
+    max_sources: int = typer.Option(12, "--max-sources", "-s", help="最多保留多少篇来源"),
+    max_seconds: float = typer.Option(240, "--max-seconds", help="墙钟时间上限（秒）"),
+    max_tool_calls: int = typer.Option(30, "--max-tool-calls", help="工具调用次数上限"),
+    max_rounds: int = typer.Option(2, "--max-rounds", help="检索-分析轮次上限"),
+    writer: str = typer.Option("", "--writer", help="覆盖写作模型"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="不渲染实时面板，只在结束时输出摘要"),
+) -> None:
+    """发起一次研究。"""
+    settings = Settings()
+    if writer:
+        settings.writer_model = writer
+    store = RunStore(settings.runs_dir)
+    models = {
+        "plan": settings.plan_model,
+        "analyze": settings.analyze_model,
+        "write": settings.write_model,
+    }
+
+    budget = Budget(
+        max_tool_calls=max_tool_calls,
+        max_seconds=max_seconds,
+        max_rounds=max_rounds,
+    )
+    agent = ResearchAgent(settings, store=store)
+
+    if quiet or not console.is_terminal:
+        def on_event(ev) -> None:
+            """非交互模式下的简化事件输出。"""
+            if ev.type in ("plan.ready", "analysis.done", "run.finished", "run.failed"):
+                console.print(f"[dim]{ev.type}[/dim] {json.dumps(ev.payload, ensure_ascii=False)[:220]}")
+
+        result = agent.run(topic, budget=budget, max_sources=max_sources, on_event=on_event)
+    else:
+        view = LiveView(topic, models)
+        with Live(view.render(), console=console, refresh_per_second=6, transient=False) as live:
+            view.live = live
+            result = agent.run(topic, budget=budget, max_sources=max_sources, on_event=view)
+            live.update(view.render())
+
+    _print_run_summary(result, settings)
+    if result.status == "failed":
+        raise typer.Exit(code=1)
+
+
+@app.command()
+def show(
+    run_id: str = typer.Argument("", help="run id；留空则看最近一次"),
+    trace: bool = typer.Option(False, "--trace", "-t", help="打印完整事件时间线"),
+    raw: bool = typer.Option(False, "--raw", help="输出原始 Markdown 而不是渲染结果"),
+) -> None:
+    """查看某次研究的报告与轨迹。"""
+    settings = Settings()
+    store = RunStore(settings.runs_dir)
+    if not run_id:
+        runs = store.list()
+        if not runs:
+            console.print("[red]还没有任何研究记录[/red]")
+            raise typer.Exit(code=1)
+        run_id = runs[0]["run_id"]
+
+    run = store.open(run_id)
+    meta_path = run.dir / "run.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+    report_path = run.dir / "report.md"
+
+    header = Table(box=None, show_header=False, pad_edge=False)
+    header.add_column(style="dim", width=10)
+    header.add_column()
+    header.add_row("主题", meta.get("topic", run.topic))
+    header.add_row("状态", str(meta.get("status", "?")))
+    header.add_row("时间", f"{meta.get('started_at', '')} → {meta.get('finished_at', '')}")
+    header.add_row("来源", str(len(meta.get("sources", []))))
+    console.print(Panel(header, title=run_id, border_style="blue"))
+
+    if report_path.exists():
+        text = report_path.read_text(encoding="utf-8")
+        if raw:
+            console.print(text)
+        else:
+            console.print(Markdown(text))
+    else:
+        console.print("[yellow]这次运行没有生成报告[/yellow]")
+
+    if meta.get("notes"):
+        console.print("\n[bold]提示[/bold]")
+        for note in meta["notes"]:
+            console.print(f"  [yellow]· {note}[/yellow]")
+
+    if trace:
+        _print_trace(run.trace_path)
+
+
+def _print_trace(path: Path) -> None:
+    """把 trace.jsonl 渲染成时间线表格。"""
+    if not path.exists():
+        console.print("[yellow]没有 trace 文件[/yellow]")
+        return
+    table = Table(title="执行轨迹", box=None, pad_edge=False)
+    table.add_column("seq", justify="right", style="dim", width=4)
+    table.add_column("阶段", width=10)
+    table.add_column("事件", width=16)
+    table.add_column("详情", overflow="fold")
+    table.add_column("耗时", justify="right", width=8)
+    table.add_column("tok", justify="right", width=8)
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        detail = _trace_detail(ev)
+        table.add_row(
+            str(ev.get("seq", "")),
+            ev.get("stage", ""),
+            ev.get("type", ""),
+            detail,
+            f"{ev['duration_ms'] / 1000:.1f}s" if ev.get("duration_ms") else "",
+            str(ev.get("tokens") or ""),
+        )
+    console.print(table)
+
+
+def _trace_detail(ev: dict) -> str:
+    """把单个事件压缩成一行可读详情。"""
+    p = ev.get("payload") or {}
+    t = ev.get("type", "")
+    if t == "plan.ready":
+        return f"{len(p.get('subquestions', []))} 个子问题"
+    if t == "search.done":
+        return f"{p.get('query', '')[:40]} → {p.get('hits')} 条"
+    if t == "fetch.done":
+        return f"子问题 {p.get('subquestion')} 新增 {len(p.get('sources') or [])} 篇"
+    if t == "analysis.done":
+        return " ".join(f"{i['id']}:{i['coverage']}" for i in p.get("items", []))
+    if t == "replan":
+        return f"{len(p.get('queries', []))} 个子问题补检索"
+    if t.endswith(".llm"):
+        return f"{p.get('model')} {p.get('finish')} {p.get('tokens', {}).get('total_tokens', 0)} tok"
+    if t == "run.finished":
+        return f"{p.get('status')} · {p.get('sources')} 篇 · {p.get('chars')} 字"
+    return json.dumps(p, ensure_ascii=False)[:80]
+
+
+@app.command("list")
+def list_runs() -> None:
+    """列出历史研究。"""
+    settings = Settings()
+    items = RunStore(settings.runs_dir).list()
+    if not items:
+        console.print("[dim]还没有研究记录[/dim]")
+        return
+    table = Table(box=None, pad_edge=False)
+    table.add_column("run", style="cyan")
+    table.add_column("状态")
+    table.add_column("主题", overflow="ellipsis", max_width=50)
+    table.add_column("来源", justify="right")
+    table.add_column("耗时", justify="right")
+    table.add_column("时间", style="dim")
+    for it in items:
+        status = it.get("status", "?")
+        table.add_row(
+            it.get("run_id", ""),
+            Text(status, style={"done": "green", "partial": "yellow", "failed": "red"}.get(status, "")),
+            it.get("topic", ""),
+            str(len(it.get("sources", []))),
+            f"{it.get('duration_s', 0)}s",
+            (it.get("started_at") or "")[:16],
+        )
+    console.print(table)
+
+
+@app.command()
+def version() -> None:
+    """版本号。"""
+    console.print(f"dra {__version__}")
+
+
+if __name__ == "__main__":
+    app()
