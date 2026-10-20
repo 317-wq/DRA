@@ -1,0 +1,2014 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deep Research Agent</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  :root {
+    --bg:#0a0e14; --panel:#11161f; --panel-2:#0d1219;
+    --border:#1e2530; --border-2:#262e3d;
+    --text:#e4e9f0; --text-2:#8b95a5; --text-3:#5a6472;
+    --accent:#3b82f6; --green:#22c55e; --purple:#a855f7;
+    --orange:#f59e0b; --pink:#ec4899; --red:#ef4444;
+  }
+  body {
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg); color:var(--text);
+    height:100vh; overflow:hidden; font-size:13px;
+  }
+  .app {
+    display:grid; grid-template-columns:230px 1fr;
+    height:100vh;
+    transition:grid-template-columns .28s cubic-bezier(.4,0,.2,1);
+  }
+  .app.sidebar-collapsed { grid-template-columns:60px 1fr; }
+
+  /* ============ 左栏 ============ */
+  .sidebar {
+    background:var(--panel-2); border-right:1px solid var(--border);
+    padding:18px 14px; display:flex; flex-direction:column;
+    overflow:hidden; position:relative; z-index:5;
+    transition:padding .28s ease;
+  }
+  .sidebar.collapsed { padding:14px 8px; }
+  .brand { display:flex; align-items:center; gap:10px; margin-bottom:22px; padding:0 6px; white-space:nowrap; overflow:hidden; }
+  .sidebar.collapsed .brand { display:none; }
+  .brand-icon {
+    width:32px; height:32px; border-radius:9px; flex-shrink:0;
+    background:linear-gradient(135deg,#3b82f6,#8b5cf6);
+    display:flex; align-items:center; justify-content:center; font-size:17px;
+  }
+  .brand-name { font-size:13px; font-weight:600; }
+  .brand-sub { font-size:10px; color:var(--text-3); margin-top:1px; }
+  .collapsed-top { display:none; justify-content:center; margin-bottom:14px; }
+  .sidebar.collapsed .collapsed-top { display:flex; }
+  .expand-btn {
+    width:36px; height:36px; border-radius:10px;
+    background:#141b26; border:1px solid var(--border-2);
+    color:var(--text-2); font-size:15px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition:all .2s;
+  }
+  .expand-btn:hover { background:#232d3d; color:var(--text); border-color:var(--accent); }
+  .collapse-btn {
+    position:absolute; top:22px; right:-13px;
+    width:26px; height:26px; border-radius:50%;
+    background:#1a2230; border:1px solid var(--border-2);
+    color:var(--text-2); font-size:12px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; z-index:10;
+    transition:all .2s;
+  }
+  .collapse-btn:hover { background:#232d3d; color:var(--text); border-color:var(--accent); }
+  .sidebar.collapsed .collapse-btn { display:none; }
+  .new-btn {
+    display:flex; align-items:center; gap:9px; padding:10px 12px;
+    border-radius:9px; background:linear-gradient(135deg,#2563eb,#3b82f6);
+    color:#fff; font-size:13px; font-weight:500; cursor:pointer;
+    margin-bottom:16px; border:none; width:100%;
+    white-space:nowrap; overflow:hidden;
+  }
+  .new-btn:hover { opacity:.88; }
+  .sidebar.collapsed .new-btn { justify-content:center; padding:10px 0; }
+  .sidebar.collapsed .new-btn .txt { display:none; }
+  .nav { overflow:hidden; flex-shrink:0; }
+  .nav-item {
+    display:flex; align-items:center; gap:10px; padding:9px 12px;
+    border-radius:8px; color:var(--text-2); font-size:13px; cursor:pointer;
+    margin-bottom:2px; white-space:nowrap; overflow:hidden;
+    transition:background .15s, color .15s;
+    position:relative;
+  }
+  .nav-item:hover, .nav-item.active { background:#161d28; color:var(--text); }
+  .nav-item .ic { flex-shrink:0; font-size:15px; width:20px; text-align:center; }
+  .sidebar.collapsed .nav-item { justify-content:center; padding:9px 0; }
+  .sidebar.collapsed .nav-item .txt { display:none; }
+  .sidebar.collapsed .nav-item:hover::after {
+    content: attr(data-tip);
+    position:absolute; left:56px; top:50%; transform:translateY(-50%);
+    background:#232d3d; color:var(--text); padding:6px 11px;
+    border-radius:7px; font-size:12px; white-space:nowrap;
+    border:1px solid var(--border-2); z-index:100;
+    box-shadow:0 4px 16px rgba(0,0,0,.4);
+  }
+  .running-section {
+    margin-top:14px; padding-top:14px;
+    border-top:1px solid var(--border);
+    overflow-y:auto; flex:1;
+  }
+  .running-section::-webkit-scrollbar { width:4px; }
+  .running-section::-webkit-scrollbar-thumb { background:#212936; border-radius:2px; }
+  .sidebar.collapsed .running-section { display:none; }
+  .running-head {
+    font-size:11px; color:var(--text-3); padding:0 12px 8px;
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .running-head .cnt {
+    background:#1a2740; color:#93c5fd;
+    padding:1px 7px; border-radius:9px; font-size:10px;
+  }
+  .run-item {
+    padding:9px 11px; border-radius:8px;
+    background:#0f141c; border:1px solid var(--border);
+    margin-bottom:6px; cursor:pointer;
+    transition:all .2s;
+    animation:fadeIn .35s ease;
+  }
+  .run-item:hover { border-color:var(--accent); }
+  .run-item.failed { border-color:#7f1d1d; background:#1c1010; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(-4px);} to{opacity:1;transform:none;} }
+  .run-title {
+    font-size:11.5px; color:var(--text); margin-bottom:5px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    display:flex; align-items:center; gap:6px;
+  }
+  .run-spinner {
+    width:10px; height:10px; border:1.5px solid #1e2530;
+    border-top-color:var(--accent); border-radius:50%;
+    animation:spin .8s linear infinite; flex-shrink:0;
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .run-item.failed .run-spinner {
+    border:none; animation:none; width:auto; height:auto;
+  }
+  .run-item.failed .run-spinner::before { content:'⚠️'; }
+  .run-status { font-size:10px; color:var(--text-3); }
+  .run-item.failed .run-status { color:#fca5a5; }
+  .run-bar { height:2px; background:#1e2530; border-radius:1px; margin-top:6px; overflow:hidden; }
+  .run-bar-inner { height:100%; background:var(--accent); transition:width .3s; border-radius:1px; }
+  .run-item.failed .run-bar-inner { background:var(--red); }
+
+  .sidebar-bottom { margin-top:auto; display:flex; flex-direction:column; gap:10px; flex-shrink:0; }
+  .agent-status {
+    border:1px solid var(--border-2); border-radius:10px;
+    padding:12px 13px; background:#0f141c;
+    white-space:nowrap; overflow:hidden;
+  }
+  .sidebar.collapsed .agent-status { padding:10px 0; display:flex; justify-content:center; }
+  .sidebar.collapsed .agent-status .txt { display:none; }
+  .agent-status .row1 { display:flex; align-items:center; gap:7px; margin-bottom:6px; }
+  .sidebar.collapsed .agent-status .row1 { margin-bottom:0; }
+  .pulse { width:7px; height:7px; border-radius:50%; background:var(--green); flex-shrink:0; animation:pulse 1.8s infinite; }
+  @keyframes pulse {
+    0% { box-shadow:0 0 0 0 rgba(34,197,94,.5); }
+    70% { box-shadow:0 0 0 7px rgba(34,197,94,0); }
+    100% { box-shadow:0 0 0 0 rgba(34,197,94,0); }
+  }
+  .agent-status .t1 { font-size:12px; color:var(--green); font-weight:500; }
+  .agent-status .t2 { font-size:11px; color:var(--text-3); }
+  .user-account {
+    display:flex; align-items:center; gap:10px; padding:8px;
+    border-radius:9px; cursor:pointer; white-space:nowrap; overflow:hidden;
+  }
+  .user-account:hover { background:#161d28; }
+  .avatar {
+    width:30px; height:30px; border-radius:50%; flex-shrink:0;
+    background:#2a3441; color:#c9d1d9;
+    display:flex; align-items:center; justify-content:center;
+    font-size:13px; font-weight:600;
+  }
+  .user-email { font-size:12.5px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+  .user-more { color:var(--text-3); font-size:16px; flex-shrink:0; }
+  .sidebar.collapsed .user-account { justify-content:center; padding:8px 0; }
+  .sidebar.collapsed .user-email, .sidebar.collapsed .user-more { display:none; }
+
+  /* ============ 主区域 ============ */
+  .main { position:relative; overflow:hidden; }
+  .view { position:absolute; inset:0; display:none; overflow:hidden; }
+  .view.active { display:flex; flex-direction:column; }
+
+  .research-layout {
+    display:grid; grid-template-columns:1fr 480px; height:100%;
+    transition:grid-template-columns .28s ease; position:relative;
+  }
+  .research-layout.right-collapsed { grid-template-columns:1fr 0px; }
+  .center { display:flex; flex-direction:column; border-right:1px solid var(--border); overflow:hidden; position:relative; }
+  .center-top { padding:20px 22px 16px; border-bottom:1px solid var(--border); position:relative; }
+  .search-box {
+    display:flex; align-items:center; gap:10px;
+    background:var(--panel); border:1px solid var(--border-2);
+    border-radius:11px; padding:11px 14px; margin-bottom:12px;
+    transition:border-color .2s, box-shadow .2s;
+  }
+  .search-box.focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(59,130,246,.1); }
+  .search-box .ic { color:var(--text-3); font-size:15px; }
+  .search-box input {
+    flex:1; background:none; border:none; outline:none;
+    color:var(--text); font-size:13.5px;
+  }
+  .search-box input::placeholder { color:var(--text-3); }
+  .tags-wrap { display:flex; gap:7px; flex-wrap:wrap; margin-bottom:14px; align-items:center; }
+  .tag {
+    padding:5px 10px 5px 12px; border-radius:16px;
+    background:#1a2740; border:1px solid #1e3a5f;
+    color:#93c5fd; font-size:11.5px;
+    display:flex; align-items:center; gap:6px;
+    transition:all .2s;
+  }
+  .tag .del {
+    cursor:pointer; opacity:.5; font-size:13px; line-height:1;
+    padding:0 2px;
+  }
+  .tag .del:hover { opacity:1; color:#fca5a5; }
+  .tag.add {
+    cursor:pointer; background:#141b26; border:1px dashed var(--border-2);
+    color:var(--text-3); padding:5px 12px;
+  }
+  .tag.add:hover { border-color:var(--accent); color:#93c5fd; }
+  .tags-empty { font-size:11.5px; color:var(--text-3); padding:5px 0; }
+  .start-row { display:flex; align-items:center; gap:10px; }
+  .start-btn {
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    margin-left:auto; padding:9px 20px;
+    background:linear-gradient(135deg,#2563eb,#3b82f6);
+    color:#fff; border:none; border-radius:9px;
+    font-size:13px; font-weight:600; cursor:pointer;
+    transition:opacity .2s;
+  }
+  .start-btn:hover { opacity:.88; }
+  .start-btn:disabled { opacity:.45; cursor:not-allowed; }
+  .start-btn.demo { animation:glow 1.2s ease-in-out infinite; }
+  @keyframes glow {
+    0%,100% { box-shadow:0 0 0 0 rgba(59,130,246,.5); }
+    50% { box-shadow:0 0 0 8px rgba(59,130,246,0); }
+  }
+  .panel-toggle-fixed {
+    position:absolute; top:20px; right:20px; z-index:50;
+    display:flex; align-items:center; gap:6px;
+    padding:7px 13px; border-radius:8px;
+    background:#1a2230; border:1px solid var(--border-2);
+    color:var(--text-2); font-size:12px; cursor:pointer;
+    transition:all .2s;
+  }
+  .panel-toggle-fixed:hover { background:#232d3d; color:var(--text); border-color:var(--accent); }
+
+  .exec-scroll { flex:1; overflow-y:auto; padding:20px 22px; }
+  .exec-scroll::-webkit-scrollbar { width:6px; }
+  .exec-scroll::-webkit-scrollbar-thumb { background:#212936; border-radius:3px; }
+  .placeholder {
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    height:100%; color:var(--text-3); font-size:12.5px; text-align:center; line-height:2;
+  }
+  .placeholder .big { font-size:36px; margin-bottom:12px; opacity:.3; }
+  .exec-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:22px; }
+  .exec-head .left { display:flex; align-items:center; gap:10px; }
+  .spinner-lg {
+    width:18px; height:18px; border:2px solid #1e2530;
+    border-top-color:var(--accent); border-radius:50%;
+    animation:spin .8s linear infinite;
+  }
+  .exec-head .title { font-size:14px; font-weight:600; }
+  .exec-head .desc { font-size:11.5px; color:var(--text-3); margin-top:2px; }
+  .exec-head .eta { font-size:11.5px; color:var(--text-3); }
+  .timeline { position:relative; padding-left:34px; }
+  .timeline::before {
+    content:''; position:absolute; left:11px; top:10px; bottom:30px;
+    width:1.5px; background:var(--border-2);
+  }
+  .tl-item { position:relative; margin-bottom:22px; }
+  .tl-node {
+    position:absolute; left:-34px; top:0;
+    width:23px; height:23px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:600;
+    background:#1a2230; color:var(--text-3);
+    border:1.5px solid var(--border-2); z-index:1;
+    transition:all .3s;
+  }
+  .tl-item.active .tl-node {
+    background:var(--accent); color:#fff; border-color:var(--accent);
+    box-shadow:0 0 0 4px rgba(59,130,246,.15);
+  }
+  .tl-item.done .tl-node { background:#14532d; color:var(--green); border-color:#166534; }
+  .tl-title { font-size:13.5px; font-weight:600; color:var(--text-3); margin-bottom:5px; transition:color .3s; }
+  .tl-item.active .tl-title, .tl-item.done .tl-title { color:var(--text); }
+  .tl-desc { font-size:12px; color:var(--text-3); line-height:1.6; }
+  .tl-item.active .tl-desc { color:var(--text-2); }
+  .check { color:var(--green); font-size:12px; margin-left:6px; }
+  .sub-logs { margin-top:8px; display:flex; flex-direction:column; gap:6px; }
+  .sub-log {
+    display:flex; align-items:flex-start; gap:8px;
+    font-size:11.5px; color:var(--text-2);
+    background:#0f141c; border:1px solid var(--border);
+    border-radius:7px; padding:8px 11px;
+  }
+  .sub-log .ic { font-size:12px; opacity:.85; margin-top:1px; }
+  .log-panel {
+    margin-top:6px; background:#0c1117;
+    border:1px solid var(--border); border-radius:10px; padding:13px 15px;
+  }
+  .log-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .log-head .t { font-size:12px; color:var(--text-2); font-weight:500; }
+  .log-head .more { font-size:11px; color:var(--accent); cursor:pointer; }
+  .log-line {
+    display:flex; gap:12px; font-size:11.5px; color:var(--text-2);
+    padding:4px 0;
+  }
+  .log-line .time { color:var(--text-3); font-variant-numeric:tabular-nums; }
+  .log-line .msg { flex:1; }
+
+  .report-panel {
+    display:flex; flex-direction:column; overflow:hidden;
+    background:var(--panel-2); position:relative;
+    transition:opacity .2s ease;
+  }
+  .research-layout.right-collapsed .report-panel { opacity:0; pointer-events:none; }
+  .tabs { display:flex; gap:4px; padding:16px 22px 0; border-bottom:1px solid var(--border); }
+  .tab {
+    padding:9px 14px; font-size:12.5px; color:var(--text-3);
+    cursor:pointer; border-bottom:2px solid transparent;
+    margin-bottom:-1px; transition:all .15s;
+  }
+  .tab:hover { color:var(--text-2); }
+  .tab.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:500; }
+  .report-scroll { flex:1; overflow-y:auto; padding:22px; }
+  .report-scroll::-webkit-scrollbar { width:6px; }
+  .report-scroll::-webkit-scrollbar-thumb { background:#212936; border-radius:3px; }
+  .report-title { font-size:18px; font-weight:700; line-height:1.4; margin-bottom:10px; }
+  .report-meta { font-size:11.5px; color:var(--text-3); margin-bottom:22px; display:flex; gap:14px; flex-wrap:wrap; }
+  .report-section { margin-bottom:24px; }
+  .report-section h3 {
+    font-size:14.5px; font-weight:600; margin-bottom:11px;
+    display:flex; align-items:center; gap:8px;
+  }
+  .report-section h3 .num { color:var(--accent); font-size:13px; }
+  .report-section p { font-size:12.5px; line-height:1.85; color:var(--text-2); margin-bottom:10px; }
+  .report-section b { color:var(--text); font-weight:600; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; font-size:11.5px; }
+  th, td { border:1px solid var(--border-2); padding:9px 11px; text-align:left; }
+  th { background:#141b26; color:var(--text); font-weight:600; }
+  td { color:var(--text-2); line-height:1.6; }
+  .tip-box {
+    display:flex; gap:11px; background:#0f1b2e;
+    border:1px solid #1e3a5f; border-radius:9px;
+    padding:13px 15px; margin:12px 0;
+  }
+  .tip-box .ic { font-size:16px; }
+  .tip-box .txt { font-size:12px; line-height:1.75; color:#93c5fd; }
+  .tip-box .txt b { color:#bfdbfe; }
+  .report-section ul { padding-left:18px; }
+  .report-section li { font-size:12.5px; line-height:1.9; color:var(--text-2); margin-bottom:3px; }
+  .report-section li b { color:var(--text); }
+  .report-foot {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:14px 22px; border-top:1px solid var(--border);
+    font-size:11.5px; color:var(--text-3);
+    gap:10px; flex-wrap:wrap;
+  }
+  .foot-actions { display:flex; gap:8px; }
+  .foot-btn {
+    display:flex; align-items:center; gap:6px;
+    padding:8px 14px; border-radius:8px;
+    background:#141b26; border:1px solid var(--border-2);
+    color:var(--text-2); font-size:12px; cursor:pointer;
+    transition:all .15s;
+  }
+  .foot-btn:hover { border-color:var(--accent); color:#93c5fd; }
+  .foot-btn.primary {
+    background:linear-gradient(135deg,#2563eb,#3b82f6);
+    border:none; color:#fff; font-weight:600;
+  }
+  .foot-btn.primary:hover { opacity:.88; }
+  .foot-btn.done { background:#14321f; border-color:#166534; color:#86efac; }
+
+  /* ============ 知识库 ============ */
+  .kb-wrap { flex:1; display:grid; grid-template-columns:1fr 420px; overflow:hidden; }
+  .kb-main { display:flex; flex-direction:column; overflow:hidden; }
+  .kb-header { padding:20px 24px 14px; border-bottom:1px solid var(--border); }
+  .kb-title-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .kb-title { font-size:18px; font-weight:700; }
+  .btn-primary {
+    display:flex; align-items:center; gap:6px;
+    padding:8px 15px; border-radius:8px; border:none;
+    background:linear-gradient(135deg,#2563eb,#3b82f6);
+    color:#fff; font-size:12.5px; font-weight:600; cursor:pointer;
+  }
+  .btn-primary:hover { opacity:.88; }
+
+  /* ★ 顶部工具条：分类下拉 + 搜索框 */
+  .kb-toolbar { display:flex; gap:10px; align-items:center; }
+  .cat-select {
+    position:relative; flex-shrink:0;
+  }
+  .cat-select-btn {
+    display:flex; align-items:center; gap:8px;
+    padding:9px 13px; border-radius:9px;
+    background:var(--panel); border:1px solid var(--border-2);
+    color:var(--text); font-size:12.5px; cursor:pointer;
+    transition:all .15s; white-space:nowrap;
+  }
+  .cat-select-btn:hover { border-color:var(--accent); }
+  .cat-select-btn .arrow { font-size:9px; color:var(--text-3); transition:transform .2s; }
+  .cat-select.open .cat-select-btn .arrow { transform:rotate(180deg); }
+  .cat-dropdown {
+    position:absolute; top:calc(100% + 6px); left:0; z-index:60;
+    background:var(--panel); border:1px solid var(--border-2);
+    border-radius:10px; padding:6px; min-width:230px;
+    box-shadow:0 12px 32px rgba(0,0,0,.5);
+    display:none; max-height:400px; overflow-y:auto;
+  }
+  .cat-select.open .cat-dropdown { display:block; }
+  .cat-opt {
+    display:flex; align-items:center; gap:9px;
+    padding:9px 11px; border-radius:7px; cursor:pointer;
+    font-size:12.5px; color:var(--text-2);
+    transition:all .12s;
+  }
+  .cat-opt:hover { background:#161d28; color:var(--text); }
+  .cat-opt.on { background:#1a2740; color:#93c5fd; }
+  .cat-opt .ico { font-size:14px; }
+  .cat-opt .n { flex:1; }
+  .cat-opt .cnt {
+    font-size:10.5px; color:var(--text-3);
+    background:#141b26; padding:1px 7px; border-radius:8px;
+  }
+  .cat-opt.on .cnt { background:#1e3a5f; color:#93c5fd; }
+
+  /* 搜索框（单个，产品级） */
+  .kb-search-single {
+    flex:1; display:flex; align-items:center; gap:10px;
+    background:var(--panel); border:1px solid var(--border-2);
+    border-radius:9px; padding:9px 13px;
+    transition:border-color .2s, box-shadow .2s;
+  }
+  .kb-search-single.focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(59,130,246,.1); }
+  .kb-search-single .ic { color:var(--text-3); font-size:14px; }
+  .kb-search-single input {
+    flex:1; background:none; border:none; outline:none;
+    color:var(--text); font-size:13px;
+  }
+  .kb-search-single input::placeholder { color:var(--text-3); }
+  .kb-search-single .adv {
+    font-size:11px; color:var(--text-3); cursor:pointer;
+    padding:3px 8px; border-radius:6px;
+    border:1px solid var(--border-2);
+    transition:all .15s;
+  }
+  .kb-search-single .adv:hover { border-color:var(--accent); color:#93c5fd; }
+
+  .kb-body { flex:1; overflow-y:auto; padding:16px 24px 24px; }
+  .kb-body::-webkit-scrollbar { width:6px; }
+  .kb-body::-webkit-scrollbar-thumb { background:#212936; border-radius:3px; }
+
+  .result-bar {
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:12px; font-size:11.5px; color:var(--text-3);
+  }
+  .result-bar b { color:var(--text-2); }
+
+  /* 文档列表（带操作） */
+  .doc-list { display:flex; flex-direction:column; gap:8px; }
+  .doc-item {
+    display:flex; gap:12px; align-items:flex-start;
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:10px; padding:12px 14px; cursor:pointer;
+    transition:all .15s; position:relative;
+  }
+  .doc-item:hover { border-color:var(--accent); background:#131923; }
+  .doc-item.active { border-color:var(--accent); background:#131923; box-shadow:0 0 0 1px var(--accent); }
+  .doc-icon {
+    width:34px; height:34px; border-radius:8px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:16px; background:#1a2230;
+  }
+  .doc-icon.pdf { background:#2d1f1f; }
+  .doc-icon.md { background:#1f2d3d; }
+  .doc-icon.web { background:#1f2d2a; }
+  .doc-icon.note { background:#2d1f2d; }
+  .doc-main { flex:1; min-width:0; }
+  .doc-name { font-size:12.5px; font-weight:600; margin-bottom:5px; display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+  .doc-name .badge {
+    font-size:10px; padding:1px 7px; border-radius:5px;
+    background:#1a2740; color:#93c5fd; font-weight:400;
+  }
+  .doc-name .badge.green { background:#14321f; color:#86efac; }
+  .doc-meta { font-size:11px; color:var(--text-3); display:flex; gap:10px; flex-wrap:wrap; }
+  .doc-meta .ok { color:#86efac; }
+  .doc-meta .cat-tag { color:#93c5fd; }
+
+  /* ★ 文档操作按钮（hover 出现） */
+  .doc-actions {
+    display:flex; gap:5px; align-items:center;
+    opacity:0; transition:opacity .15s; flex-shrink:0;
+  }
+  .doc-item:hover .doc-actions { opacity:1; }
+  .doc-act {
+    width:28px; height:28px; border-radius:7px;
+    background:#141b26; border:1px solid var(--border-2);
+    color:var(--text-2); font-size:12px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition:all .15s;
+  }
+  .doc-act:hover { border-color:var(--accent); color:#93c5fd; }
+  .doc-act.del:hover { border-color:#7f1d1d; color:#fca5a5; }
+
+  /* 搜索结果（前 3 条，带来源引用） */
+  .search-results { display:flex; flex-direction:column; gap:10px; }
+  .sr-item {
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:11px; padding:14px 16px;
+    cursor:pointer; transition:all .15s;
+    animation:fadeIn .35s ease;
+  }
+  .sr-item:hover { border-color:var(--accent); background:#131923; }
+  .sr-head {
+    display:flex; align-items:center; gap:9px; margin-bottom:8px;
+    font-size:12px; color:var(--text-3); flex-wrap:wrap;
+  }
+  .sr-head .idx {
+    width:20px; height:20px; border-radius:5px;
+    background:#1a2740; color:#93c5fd;
+    display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:600;
+  }
+  .sr-head .src-name { color:var(--text); font-weight:600; font-size:12.5px; }
+  .sr-head .cat-tag {
+    font-size:10px; padding:1px 7px; border-radius:4px;
+    background:#1a2740; color:#93c5fd;
+  }
+  .sr-head .score {
+    margin-left:auto; color:#86efac; font-size:11px;
+    font-variant-numeric:tabular-nums;
+  }
+  .sr-text { font-size:12.5px; line-height:1.7; color:var(--text-2); }
+  .sr-text mark { background:rgba(245,158,11,.25); color:#fbbf24; padding:0 2px; border-radius:2px; }
+  .sr-cite {
+    margin-top:9px; padding-top:9px; border-top:1px solid var(--border);
+    font-size:11px; color:var(--text-3); display:flex; align-items:center; gap:7px;
+  }
+  .sr-cite .link {
+    color:#93c5fd; text-decoration:none; cursor:pointer;
+    display:flex; align-items:center; gap:4px;
+  }
+  .sr-cite .link:hover { text-decoration:underline; }
+
+  .empty-result {
+    padding:36px 24px; text-align:center; color:var(--text-3); font-size:12.5px;
+  }
+  .empty-result .big { font-size:32px; opacity:.3; margin-bottom:10px; }
+
+  /* 高级对比面板 */
+  .adv-panel {
+    background:#0c1117; border:1px solid var(--border-2);
+    border-radius:11px; margin-bottom:16px; overflow:hidden;
+  }
+  .adv-head {
+    padding:11px 15px; border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:12px; color:var(--text-2); cursor:pointer;
+  }
+  .adv-head .ttl { display:flex; align-items:center; gap:8px; }
+  .adv-head .tag-tech {
+    font-size:10px; padding:1px 7px; border-radius:4px;
+    background:#251a2d; color:#c084fc;
+  }
+  .adv-body { padding:12px 15px; display:none; }
+  .adv-panel.open .adv-body { display:block; }
+  .adv-block { margin-bottom:12px; }
+  .adv-block:last-child { margin-bottom:0; }
+  .adv-block-title {
+    font-size:11px; color:var(--text-3); margin-bottom:8px;
+    display:flex; align-items:center; gap:7px;
+  }
+  .adv-dot { width:8px; height:8px; border-radius:50%; }
+  .adv-dot.kw { background:#f59e0b; }
+  .adv-dot.sem { background:#a855f7; }
+  .adv-dot.fuse { background:var(--green); }
+  .adv-hit {
+    display:flex; gap:9px; padding:7px 9px; border-radius:6px;
+    font-size:11px; background:#0f141c; margin-bottom:4px;
+    align-items:flex-start;
+  }
+  .adv-hit .rk { color:var(--text-3); flex-shrink:0; }
+  .adv-hit .tx { flex:1; color:var(--text-2); line-height:1.55; }
+  .adv-hit .sc { flex-shrink:0; font-variant-numeric:tabular-nums; }
+  .adv-hit .sc.kw { color:#fbbf24; }
+  .adv-hit .sc.sem { color:#c084fc; }
+  .adv-hit .sc.fuse { color:#86efac; }
+
+  /* 知识库右侧详情 */
+  .kb-detail {
+    display:flex; flex-direction:column; overflow:hidden;
+    background:var(--panel-2); border-left:1px solid var(--border);
+  }
+  .detail-head { padding:18px 20px 14px; border-bottom:1px solid var(--border); position:relative; }
+  .detail-close {
+    position:absolute; top:18px; right:20px;
+    width:24px; height:24px; border-radius:6px;
+    background:#1a2230; border:1px solid var(--border-2);
+    color:var(--text-2); font-size:11px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .detail-close:hover { border-color:var(--accent); color:var(--text); }
+  .detail-title { font-size:14.5px; font-weight:700; margin-bottom:5px; padding-right:32px; }
+  .detail-sub { font-size:11px; color:var(--text-3); }
+  .detail-actions { display:flex; gap:6px; margin-top:10px; }
+  .detail-act {
+    padding:6px 11px; border-radius:7px;
+    background:#141b26; border:1px solid var(--border-2);
+    color:var(--text-2); font-size:11px; cursor:pointer;
+    display:flex; align-items:center; gap:5px;
+    transition:all .15s;
+  }
+  .detail-act:hover { border-color:var(--accent); color:#93c5fd; }
+  .detail-act.del:hover { border-color:#7f1d1d; color:#fca5a5; }
+  .meta-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:14px 20px; border-bottom:1px solid var(--border); }
+  .meta-item { background:#0f141c; border:1px solid var(--border); border-radius:7px; padding:8px 10px; }
+  .meta-item .k { font-size:10px; color:var(--text-3); margin-bottom:2px; }
+  .meta-item .v { font-size:12px; color:var(--text); }
+  .meta-item .v.ok { color:#86efac; }
+  .chunk-head {
+    padding:14px 20px 8px; font-size:12px; color:var(--text-2);
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .chunk-head .cnt { color:var(--text-3); font-size:10.5px; }
+  .chunk-list { flex:1; overflow-y:auto; padding:0 20px 20px; display:flex; flex-direction:column; gap:8px; }
+  .chunk-list::-webkit-scrollbar { width:6px; }
+  .chunk-list::-webkit-scrollbar-thumb { background:#212936; border-radius:3px; }
+  .chunk {
+    background:#0f141c; border:1px solid var(--border);
+    border-radius:8px; padding:10px 12px;
+  }
+  .chunk .idx { font-size:10px; color:var(--accent); margin-bottom:5px; font-weight:600; }
+  .chunk .txt { font-size:11.5px; line-height:1.65; color:var(--text-2); }
+  .chunk .foot { display:flex; gap:6px; margin-top:7px; flex-wrap:wrap; }
+  .chunk .tag {
+    font-size:9.5px; padding:2px 7px; border-radius:4px;
+    background:#14321f; color:#86efac;
+  }
+  .chunk .tag.cat { background:#1a2740; color:#93c5fd; }
+  .empty-detail {
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    height:100%; color:var(--text-3); font-size:12px; text-align:center; line-height:2;
+  }
+  .empty-detail .big { font-size:34px; margin-bottom:10px; opacity:.3; }
+
+  /* 研究历史 */
+  .history-wrap { flex:1; overflow-y:auto; padding:22px 26px; }
+  .history-wrap::-webkit-scrollbar { width:6px; }
+  .history-wrap::-webkit-scrollbar-thumb { background:#212936; border-radius:3px; }
+  .history-title { font-size:18px; font-weight:700; margin-bottom:6px; }
+  .history-sub { font-size:12px; color:var(--text-3); margin-bottom:20px; }
+  .hist-item {
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:11px; padding:16px 18px; margin-bottom:10px;
+  }
+  .hist-main { display:flex; gap:13px; align-items:flex-start; cursor:pointer; }
+  .hist-status {
+    width:32px; height:32px; border-radius:8px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; font-size:15px;
+  }
+  .hist-status.done { background:#14321f; }
+  .hist-status.running { background:#1a2740; }
+  .hist-status.failed { background:#2d1f1f; }
+  .hist-body { flex:1; min-width:0; }
+  .hist-title-line { font-size:13.5px; font-weight:600; margin-bottom:6px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .hist-title-line .st {
+    font-size:10px; padding:2px 8px; border-radius:5px; font-weight:400;
+  }
+  .st.done { background:#14321f; color:#86efac; }
+  .st.running { background:#1a2740; color:#93c5fd; }
+  .st.failed { background:#2d1f1f; color:#fca5a5; }
+  .st.sunk { background:#14321f; color:#86efac; }
+  .hist-meta { font-size:11.5px; color:var(--text-3); display:flex; gap:12px; flex-wrap:wrap; }
+  .hist-actions { display:flex; gap:7px; margin-top:13px; padding-top:13px; border-top:1px solid var(--border); flex-wrap:wrap; }
+  .ha-btn {
+    display:flex; align-items:center; gap:5px;
+    padding:6px 12px; border-radius:7px;
+    background:#141b26; border:1px solid var(--border-2);
+    color:var(--text-2); font-size:11.5px; cursor:pointer;
+    transition:all .15s;
+  }
+  .ha-btn:hover { border-color:var(--accent); color:#93c5fd; }
+  .ha-btn.primary { background:#1a2740; border-color:#1e3a5f; color:#93c5fd; }
+  .ha-btn.sink { background:#14321f; border-color:#166534; color:#86efac; }
+  .ha-btn.danger:hover { border-color:#7f1d1d; color:#fca5a5; }
+  .ha-btn:disabled { opacity:.5; cursor:not-allowed; }
+  .followups {
+    margin-top:12px; padding-top:12px; border-top:1px dashed var(--border-2);
+  }
+  .followups-toggle {
+    display:flex; align-items:center; gap:7px;
+    font-size:11.5px; color:#93c5fd; cursor:pointer;
+    padding:4px 0; user-select:none;
+  }
+  .followups-toggle:hover { color:#bfdbfe; }
+  .followups-toggle .arrow { transition:transform .2s; font-size:10px; }
+  .followups.open .followups-toggle .arrow { transform:rotate(90deg); }
+  .followups-list {
+    display:none; margin-top:9px; padding-left:18px;
+    border-left:2px solid #1e3a5f;
+    flex-direction:column; gap:8px;
+  }
+  .followups.open .followups-list { display:flex; }
+  .fu-item {
+    background:#0f141c; border:1px solid var(--border);
+    border-radius:9px; padding:11px 13px;
+    display:flex; gap:10px; align-items:flex-start;
+  }
+  .fu-icon { font-size:14px; flex-shrink:0; margin-top:1px; }
+  .fu-body { flex:1; min-width:0; }
+  .fu-q { font-size:12.5px; color:var(--text); margin-bottom:5px; line-height:1.5; }
+  .fu-q b { color:#93c5fd; font-weight:500; }
+  .fu-meta { font-size:10.5px; color:var(--text-3); display:flex; gap:10px; flex-wrap:wrap; }
+  .fu-meta .st { font-size:9.5px; padding:1px 7px; border-radius:4px; }
+  .ask-box {
+    margin-top:12px; padding:13px 14px;
+    background:#0f141c; border:1px solid #1e3a5f;
+    border-radius:9px;
+  }
+  .ask-box .qb { font-size:11.5px; color:var(--text-3); margin-bottom:8px; }
+  .ask-box .qb b { color:#93c5fd; }
+  .ask-input-row { display:flex; gap:8px; }
+  .ask-input-row input {
+    flex:1; background:#0a0e14; border:1px solid var(--border-2);
+    border-radius:7px; padding:8px 11px; color:var(--text); font-size:12px; outline:none;
+  }
+  .ask-input-row input:focus { border-color:var(--accent); }
+  .ask-input-row button {
+    padding:8px 15px; border-radius:7px; border:none;
+    background:linear-gradient(135deg,#2563eb,#3b82f6);
+    color:#fff; font-size:12px; font-weight:600; cursor:pointer;
+  }
+
+  /* Toast */
+  .toast {
+    position:fixed; bottom:80px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:rgba(20,50,31,.97); border:1px solid #166534;
+    color:#86efac; padding:12px 22px; border-radius:10px;
+    font-size:12.5px; z-index:300; opacity:0;
+    transition:all .3s; pointer-events:none;
+    display:flex; align-items:center; gap:9px;
+    box-shadow:0 8px 30px rgba(0,0,0,.5); max-width:520px;
+  }
+  .toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+  .toast.error { background:rgba(60,20,20,.97); border-color:#7f1d1d; color:#fca5a5; }
+  .toast.warn { background:rgba(60,50,20,.97); border-color:#78350f; color:#fcd34d; }
+
+  /* Modal */
+  .modal-mask {
+    position:fixed; inset:0; background:rgba(0,0,0,.65);
+    z-index:250; display:none; align-items:center; justify-content:center;
+    backdrop-filter:blur(3px);
+  }
+  .modal-mask.show { display:flex; }
+  .modal {
+    background:var(--panel-2); border:1px solid var(--border-2);
+    border-radius:14px; width:min(720px, 90vw); max-height:82vh;
+    display:flex; flex-direction:column;
+    box-shadow:0 20px 60px rgba(0,0,0,.7);
+    animation:modalIn .25s ease;
+  }
+  @keyframes modalIn { from { transform:scale(.96); opacity:0; } to { transform:scale(1); opacity:1; } }
+  .modal-head {
+    padding:18px 22px; border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .modal-head .t { font-size:15px; font-weight:700; display:flex; align-items:center; gap:9px; }
+  .modal-close {
+    width:28px; height:28px; border-radius:7px;
+    background:#1a2230; border:1px solid var(--border-2);
+    color:var(--text-2); font-size:13px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .modal-close:hover { border-color:var(--accent); color:var(--text); }
+  .modal-body { padding:20px 22px; overflow-y:auto; font-size:13px; line-height:1.85; color:var(--text-2); }
+  .modal-body::-webkit-scrollbar { width:6px; }
+  .modal-body::-webkit-scrollbar-thumb { background:#212936; border-radius:3px; }
+  .modal-body h4 { color:var(--text); font-size:13.5px; margin:14px 0 8px; }
+  .modal-body h4:first-child { margin-top:0; }
+  .modal-foot {
+    padding:14px 22px; border-top:1px solid var(--border);
+    display:flex; justify-content:flex-end; gap:9px;
+  }
+  .modal-btn {
+    padding:8px 17px; border-radius:8px;
+    background:#141b26; border:1px solid var(--border-2);
+    color:var(--text-2); font-size:12.5px; cursor:pointer;
+  }
+  .modal-btn:hover { border-color:var(--accent); color:#93c5fd; }
+  .modal-btn.danger {
+    background:#7f1d1d; border-color:#991b1b; color:#fff;
+  }
+  .modal-btn.danger:hover { background:#991b1b; }
+  .modal-btn.primary {
+    background:linear-gradient(135deg,#2563eb,#3b82f6);
+    border:none; color:#fff; font-weight:600;
+  }
+
+  /* 演示控制条 */
+  .demo-bar {
+    position:fixed; bottom:16px; left:50%; transform:translateX(-50%);
+    display:flex; align-items:center; gap:12px;
+    background:rgba(17,22,31,.95); backdrop-filter:blur(10px);
+    border:1px solid var(--border-2); border-radius:12px;
+    padding:10px 16px; z-index:100; font-size:12px;
+    box-shadow:0 8px 30px rgba(0,0,0,.5);
+  }
+  .demo-bar .label { color:var(--text-2); }
+  .demo-bar button {
+    padding:7px 14px; border-radius:8px; border:none;
+    background:linear-gradient(135deg,#2563eb,#3b82f6);
+    color:#fff; font-size:12px; font-weight:600; cursor:pointer;
+  }
+  .demo-bar button:hover { opacity:.88; }
+  .demo-bar button.ghost {
+    background:#141b26; border:1px solid var(--border-2); color:var(--text-2);
+  }
+  .demo-bar .status { color:var(--accent); font-weight:500; min-width:80px; }
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="brand-icon">🧠</div>
+      <div class="brand-text">
+        <div class="brand-name">Deep Research Agent</div>
+        <div class="brand-sub">让 AI 为你完成深度研究</div>
+      </div>
+    </div>
+    <button class="collapse-btn" id="collapseBtn" title="折叠侧栏">‹</button>
+    <div class="collapsed-top">
+      <button class="expand-btn" id="expandBtn" title="展开侧栏">»</button>
+    </div>
+    <button class="new-btn" id="newResearchBtn"><span>＋</span><span class="txt">新建研究</span></button>
+    <nav class="nav">
+      <div class="nav-item active" data-view="research" data-tip="研究"><span class="ic">🔬</span><span class="txt">研究</span></div>
+      <div class="nav-item" data-view="history" data-tip="研究历史"><span class="ic">🕐</span><span class="txt">研究历史</span></div>
+      <div class="nav-item" data-view="kb" data-tip="知识库"><span class="ic">📚</span><span class="txt">知识库</span></div>
+    </nav>
+    <div class="running-section" id="runningSection" style="display:none;">
+      <div class="running-head">
+        <span>⏳ 正在处理</span>
+        <span class="cnt" id="runningCount">0</span>
+      </div>
+      <div id="runningList"></div>
+    </div>
+    <div class="sidebar-bottom">
+      <div class="agent-status">
+        <div class="row1"><span class="pulse"></span><span class="t1">Agent 在线</span></div>
+        <div class="t2 txt">可随时开始新的研究任务</div>
+      </div>
+      <div class="user-account">
+        <div class="avatar">Q</div>
+        <div class="user-email">344******90@qq.com</div>
+        <div class="user-more">⋯</div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- 视图1：研究 -->
+    <div class="view active" id="view-research">
+      <div class="research-layout" id="researchLayout">
+        <div class="center">
+          <button class="panel-toggle-fixed" id="panelToggle" title="收起/展开报告">›</button>
+          <div class="center-top">
+            <div class="search-box" id="searchBox">
+              <span class="ic">🔍</span>
+              <input id="query" placeholder="输入研究主题..." />
+            </div>
+            <div class="tags-wrap" id="tagsWrap">
+              <span class="tags-empty">输入主题后，Agent 会自动拆解出研究子问题</span>
+            </div>
+            <div class="start-row">
+              <button class="start-btn" id="startBtn"><span>🚀</span><span>开始研究</span></button>
+            </div>
+          </div>
+          <div class="exec-scroll" id="execScroll">
+            <div class="placeholder">
+              <div class="big">🔬</div>
+              输入研究主题，点击「开始研究」<br>Agent 将自动拆解任务、检索资料并生成报告
+            </div>
+          </div>
+        </div>
+
+        <div class="report-panel">
+          <div class="tabs">
+            <div class="tab active" data-tab="report">研究报告</div>
+            <div class="tab" data-tab="sources">来源引用</div>
+            <div class="tab" data-tab="trace">执行轨迹</div>
+          </div>
+          <div class="report-scroll" id="reportBody">
+            <div class="placeholder"><div class="big">📄</div>研究报告将在研究完成后生成</div>
+          </div>
+          <div class="report-foot" id="reportFoot" style="display:none">
+            <span>Markdown 格式 · 约 3,200 字</span>
+            <div class="foot-actions">
+              <button class="foot-btn primary" id="sinkBtn">📥 沉淀到知识库</button>
+              <button class="foot-btn">⬇ 下载</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 视图2：知识库 -->
+    <div class="view" id="view-kb">
+      <div class="kb-wrap">
+        <div class="kb-main">
+          <div class="kb-header">
+            <div class="kb-title-row">
+              <div class="kb-title">知识库</div>
+              <button class="btn-primary">＋ 添加文档</button>
+            </div>
+
+            <!-- ★ 工具条：分类下拉 + 单搜索框 -->
+            <div class="kb-toolbar">
+              <div class="cat-select" id="catSelect">
+                <div class="cat-select-btn" id="catSelectBtn">
+                  <span id="catSelectLabel">📂 全部分类</span>
+                  <span class="arrow">▼</span>
+                </div>
+                <div class="cat-dropdown" id="catDropdown"></div>
+              </div>
+
+              <div class="kb-search-single" id="kbSearchBox">
+                <span class="ic">🔍</span>
+                <input id="kbSearchInput" placeholder="搜索知识库内容，如：怎么让服务器扛住高并发" />
+                <span class="adv" id="advToggle" title="查看检索细节">🔬 高级</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="kb-body">
+            <!-- ★ 高级对比面板（默认隐藏） -->
+            <div class="adv-panel" id="advPanel">
+              <div class="adv-head" onclick="this.parentElement.classList.toggle('open')">
+                <div class="ttl">
+                  <span>🔬 检索细节</span>
+                  <span class="tag-tech">关键词 + 语义 + RRF 融合</span>
+                </div>
+                <span style="font-size:11px;color:var(--text-3)">点击展开/收起</span>
+              </div>
+              <div class="adv-body" id="advBody"></div>
+            </div>
+
+            <!-- ★ 结果计数 -->
+            <div class="result-bar" id="resultBar"></div>
+
+            <!-- ★ 文档列表 / 搜索结果 -->
+            <div id="kbContent"></div>
+          </div>
+        </div>
+
+        <div class="kb-detail">
+          <div id="kbDetailBody">
+            <div class="empty-detail"><div class="big">📄</div>点击左侧文档<br>查看分块与向量详情</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 视图3：研究历史 -->
+    <div class="view" id="view-history">
+      <div class="history-wrap">
+        <div class="history-title">研究历史</div>
+        <div class="history-sub">每次研究自动记录 · 追问以树形挂在主研究下 · 可继续研究/追问/沉淀</div>
+        <div id="historyList"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Modal（查看/确认） -->
+<div class="modal-mask" id="modalMask">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="t" id="modalTitle">标题</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-foot" id="modalFoot"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span id="toastIcon">✅</span><span id="toastMsg">操作成功</span></div>
+
+<div class="demo-bar">
+  <span class="label">🎬 演示：</span>
+  <button id="demoBtn">播放研究流程</button>
+  <button id="demoFailBtn" class="ghost">模拟失败</button>
+  <button id="resetBtn" class="ghost">重置</button>
+  <span class="status" id="demoStatus">待播放</span>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* ================= 全局状态 ================= */
+const state = {
+  running: [],
+  history: [
+    { id:'H1', title:'C++ 高性能网络库架构设计与选型分析', status:'done', sources:5, words:'3,200', time:'刚刚', sunk:false, reportKey:'netlib', followups:[] },
+    { id:'H2', title:'RAG 与微调的选择策略研究', status:'done', sources:6, words:'2,800', time:'2025-04-21 10:12', sunk:true, reportKey:'ragft',
+      followups:[{ id:'F1', q:'那如果知识更新很频繁，微调还有意义吗？', status:'done', sources:3, words:'900', time:'2025-04-21 11:00' }] },
+    { id:'H3', title:'Agent 记忆机制主流方案调研', status:'running', sources:4, words:'—', time:'刚刚', sunk:false, reportKey:null, followups:[] }
+  ],
+  kbDocs: [
+    { id:1, icon:'📗', type:'md', name:'C++网络库选型研究报告.md', badge:'研究沉淀', badgeType:'green',
+      meta:['来自研究任务 #A3F2','5 个来源','2 天前更新','18 个分块'], cat:'net',
+      content:`# C++网络库选型研究报告\n\n## 1. 研究背景\n在高并发、低延迟的业务场景中，C++ 高性能网络库是构建高性能服务器的关键基础设施...\n\n## 2. 主流网络库对比\n### Boost.Asio\n基于 Proactor 模型的跨平台 C++ 网络库，支持同步与异步两种编程风格，功能完整但学习曲线较陡。\n\n### libevent\n事件驱动（Reactor）模型，轻量级、API 简单，适合对性能要求高但对功能要求不复杂的场景。\n\n### muduo\n基于 epoll 的 Reactor 网络库，代码简洁、性能优异，作者陈硕，适合学习与中小型高性能服务器开发。\n\n## 3. 选型建议\n通用场景推荐 Boost.Asio 或 muduo；极致性能可考虑 Seastar。`,
+      chunkPreview:[
+        'Boost.Asio 是基于 Proactor 模型的跨平台 C++ 网络库，支持同步与异步两种编程风格，功能完整但学习曲线较陡。',
+        'libevent 采用事件驱动（Reactor）模型，轻量级、API 简单，适合对性能要求高但对功能要求不复杂的场景。',
+        'muduo 是基于 epoll 的 Reactor 网络库，代码简洁、性能优异，作者陈硕，适合学习与中小型高性能服务器开发。',
+        '选型建议：通用场景推荐 Boost.Asio 或 muduo；极致性能可考虑 Seastar，但需评估团队学习成本。'
+      ]},
+    { id:2, icon:'📕', type:'pdf', name:'深入理解计算机系统.pdf', badge:'PDF',
+      meta:['32 页','已向量化','昨天更新','142 个分块'], cat:'sys',
+      content:`# 深入理解计算机系统\n\n## 第 11 章 网络编程\n每个网络应用都是基于客户端-服务器模型的...\n\n套接字（socket）是网络通信的端点，通过 socket 接口可以创建、连接和收发数据。\n\n并发服务器有三种基本实现方式：进程、I/O 多路复用、线程。`,
+      chunkPreview:[
+        '第 11 章 网络编程：每个网络应用都是基于客户端-服务器模型的...',
+        '套接字（socket）是网络通信的端点，通过 socket 接口可以创建、连接和收发数据。',
+        '并发服务器有三种基本实现方式：进程、I/O 多路复用、线程。'
+      ]},
+    { id:3, icon:'📘', type:'web', name:'MCP 协议官方规范', badge:'网页收藏',
+      meta:['modelcontextprotocol.io','已向量化','3 天前更新','26 个分块'], cat:'llm',
+      content:`# MCP 协议官方规范\n\nMCP（Model Context Protocol）是一个开放协议，用于标准化 LLM 应用与外部数据源、工具之间的连接。\n\n## 架构\nMCP 采用客户端-服务器架构，Host 应用通过 Client 连接到 MCP Server。\n\n## 能力\nMCP Server 可以提供三类能力：Resources、Tools、Prompts。`,
+      chunkPreview:[
+        'MCP（Model Context Protocol）是一个开放协议，用于标准化 LLM 应用与外部数据源、工具之间的连接。',
+        'MCP 采用客户端-服务器架构，Host 应用通过 Client 连接到 MCP Server。',
+        'MCP Server 可以提供三类能力：Resources、Tools、Prompts。'
+      ]},
+    { id:4, icon:'📝', type:'note', name:'面试笔记 - RAG 优化技巧.md', badge:'笔记',
+      meta:['我的笔记','已向量化','5 天前更新','9 个分块'], cat:'rag',
+      content:`# 面试笔记 - RAG 优化技巧\n\n## 第一层：切分策略\n固定长度 vs 语义切分 vs 递归切分。\n\n## 第二层：检索增强\nHyDE、查询改写、多路召回、Rerank。\n\n## 第三层：上下文压缩\n避免无关 chunk 污染上下文，降低幻觉。`,
+      chunkPreview:[
+        'RAG 优化第一层：切分策略。固定长度 vs 语义切分 vs 递归切分。',
+        'RAG 优化第二层：检索增强。HyDE、查询改写、多路召回、Rerank。',
+        'RAG 优化第三层：上下文压缩。避免无关 chunk 污染上下文，降低幻觉。'
+      ]},
+    { id:5, icon:'📗', type:'md', name:'RAG vs 微调 对比研究.md', badge:'研究沉淀', badgeType:'green',
+      meta:['来自研究任务 #B7C1','6 个来源','1 周前更新','22 个分块'], cat:'rag',
+      content:`# RAG vs 微调 对比研究\n\nRAG 与微调不是替代关系，而是互补：RAG 解决知识时效性，微调解决行为模式。\n\n知识频繁更新 → 选 RAG；需要固定输出风格/格式 → 选微调。\n\n两者可以结合：先用微调让模型学会领域语言，再用 RAG 注入实时知识。`,
+      chunkPreview:[
+        'RAG 与微调不是替代关系，而是互补：RAG 解决知识时效性，微调解决行为模式。',
+        '知识频繁更新 → 选 RAG；需要固定输出风格/格式 → 选微调。',
+        '两者可以结合：先用微调让模型学会领域语言，再用 RAG 注入实时知识。'
+      ]}
+  ],
+  catFilter: 'all',
+  searchQuery: ''
+};
+
+/* ================= Toast ================= */
+let toastTimer = null;
+function toast(msg, type = 'ok') {
+  $('#toastMsg').textContent = msg;
+  $('#toastIcon').textContent = type === 'error' ? '⚠️' : type === 'warn' ? '⚡' : '✅';
+  const el = $('#toast');
+  el.classList.remove('error','warn');
+  if (type === 'error') el.classList.add('error');
+  if (type === 'warn') el.classList.add('warn');
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), type === 'ok' ? 2200 : 3500);
+}
+
+/* ================= Modal ================= */
+function openModal({ title, body, foot }) {
+  $('#modalTitle').innerHTML = title;
+  $('#modalBody').innerHTML = body;
+  $('#modalFoot').innerHTML = foot || '<button class="modal-btn" onclick="closeModal()">关闭</button>';
+  $('#modalMask').classList.add('show');
+}
+window.closeModal = function() { $('#modalMask').classList.remove('show'); };
+$('#modalMask').addEventListener('click', (e) => {
+  if (e.target.id === 'modalMask') closeModal();
+});
+
+/* ================= 视图切换 ================= */
+function switchView(view) {
+  $$('.nav-item').forEach(x => x.classList.remove('active'));
+  document.querySelector(`.nav-item[data-view="${view}"]`).classList.add('active');
+  $$('.view').forEach(v => v.classList.remove('active'));
+  $('#view-' + view).classList.add('active');
+  if (view === 'history') renderHistory();
+  if (view === 'kb') renderKb();
+}
+$$('.nav-item').forEach(item => {
+  item.addEventListener('click', () => switchView(item.dataset.view));
+});
+
+/* ================= 侧边栏折叠 ================= */
+const app = $('#app');
+const sidebar = $('#sidebar');
+$('#collapseBtn').addEventListener('click', () => {
+  app.classList.add('sidebar-collapsed');
+  sidebar.classList.add('collapsed');
+});
+$('#expandBtn').addEventListener('click', () => {
+  app.classList.remove('sidebar-collapsed');
+  sidebar.classList.remove('collapsed');
+});
+
+/* ================= 右栏开关 ================= */
+const researchLayout = $('#researchLayout');
+const panelToggle = $('#panelToggle');
+panelToggle.addEventListener('click', () => {
+  const collapsed = researchLayout.classList.toggle('right-collapsed');
+  panelToggle.textContent = collapsed ? '‹' : '›';
+});
+
+/* ================= 正在处理任务区 ================= */
+function renderRunning() {
+  const sec = $('#runningSection');
+  if (state.running.length === 0) { sec.style.display = 'none'; return; }
+  sec.style.display = 'block';
+  $('#runningCount').textContent = state.running.length;
+  $('#runningList').innerHTML = state.running.map(r => `
+    <div class="run-item ${r.status === 'failed' ? 'failed' : ''}" onclick="focusRunning('${r.id}')">
+      <div class="run-title">
+        <div class="run-spinner"></div>
+        <span>${r.title}</span>
+      </div>
+      <div class="run-status">
+        ${r.status === 'failed' ? `失败：${r.error || '未知错误'}` : `${r.stage} · ${r.progress}/5`}
+      </div>
+      <div class="run-bar">
+        <div class="run-bar-inner" style="width:${r.status === 'failed' ? 100 : (r.progress/5*100)}%"></div>
+      </div>
+    </div>
+  `).join('');
+}
+window.focusRunning = function(id) {
+  const r = state.running.find(x => x.id === id);
+  if (!r) return;
+  switchView('research');
+  toast('已切回该研究');
+};
+function addRunning(id, title) {
+  state.running.push({ id, title, stage:'拆解问题', progress:1, status:'running', error:null });
+  renderRunning();
+}
+function updateRunning(id, patch) {
+  const r = state.running.find(x => x.id === id);
+  if (r) Object.assign(r, patch);
+  renderRunning();
+}
+function removeRunning(id, { failed = false, error = '' } = {}) {
+  const r = state.running.find(x => x.id === id);
+  if (!r) return;
+  if (failed) {
+    r.status = 'failed'; r.error = error;
+    renderRunning();
+    setTimeout(() => {
+      state.running = state.running.filter(x => x.id !== id);
+      renderRunning();
+    }, 6000);
+    toast(`研究失败：${error}`, 'error');
+  } else {
+    state.running = state.running.filter(x => x.id !== id);
+    renderRunning();
+  }
+}
+
+/* ================= 标签区 ================= */
+const currentTags = [];
+function renderTags() {
+  const wrap = $('#tagsWrap');
+  if (currentTags.length === 0) {
+    wrap.innerHTML = `<span class="tags-empty">输入主题后，Agent 会自动拆解出研究子问题</span>`;
+    return;
+  }
+  wrap.innerHTML = currentTags.map((t, i) => `
+    <span class="tag">${t}<span class="del" onclick="removeTag(${i})">×</span></span>
+  `).join('') + `<span class="tag add" onclick="addTag()">＋ 补充方向</span>`;
+}
+window.removeTag = function(i) { currentTags.splice(i, 1); renderTags(); };
+window.addTag = function() {
+  const t = prompt('输入要补充的研究方向：');
+  if (t && t.trim()) { currentTags.push(t.trim()); renderTags(); }
+};
+
+const SAMPLE_TAGS = {
+  default: ['核心概念', '关键对比', '优缺点分析', '适用场景', '选型建议'],
+  cpp: ['网络库整体架构', '事件驱动模型', '性能对比', '典型应用场景', '选型建议'],
+  rag: ['RAG 原理', '与微调的差异', '适用场景', '成本对比', '落地建议']
+};
+function decomposeTitle(title) {
+  const t = title.toLowerCase();
+  if (t.includes('c++') || t.includes('网络')) return SAMPLE_TAGS.cpp;
+  if (t.includes('rag') || t.includes('微调')) return SAMPLE_TAGS.rag;
+  return SAMPLE_TAGS.default;
+}
+let decomposeTimer = null;
+$('#query').addEventListener('input', (e) => {
+  const v = e.target.value.trim();
+  clearTimeout(decomposeTimer);
+  if (!v) { currentTags.length = 0; renderTags(); return; }
+  decomposeTimer = setTimeout(() => {
+    const tags = decomposeTitle(v);
+    currentTags.length = 0;
+    currentTags.push(...tags);
+    renderTags();
+  }, 500);
+});
+
+/* ================= 研究流程 ================= */
+const QUERY_TEXT = '分析当前主流 C++ 高性能网络库的架构设计与优缺点，并给出选型建议';
+const STEPS = [
+  { key:'plan',   title:'拆分研究问题', desc:'将研究目标拆解为可独立检索的子问题' },
+  { key:'scheme', title:'制定研究计划', desc:'规划检索来源、工具调用顺序与信息整合策略' },
+  { key:'search', title:'搜索与收集资料', desc:'多源检索、网页解析与关键信息提取' },
+  { key:'verify', title:'分析与交叉验证', desc:'对多来源信息进行去重、验证和整理' },
+  { key:'write',  title:'生成研究报告', desc:'整理结构化内容，生成带引用的 Markdown 报告' },
+];
+const REPORT_HTML = `
+  <h2 class="report-title">C++ 高性能网络库架构设计与选型分析报告</h2>
+  <div class="report-meta"><span>2025-04-28</span><span>5 个主要来源</span><span>约 8 分钟阅读</span></div>
+  <div class="report-section">
+    <h3><span class="num">1.</span>研究背景</h3>
+    <p>在高并发、低延迟的业务场景中，C++ 高性能网络库是构建高性能服务器的关键基础设施。本文对当前主流的 C++ 网络库（如 <b>Boost.Asio、libevent、muduo、Seastar</b> 等）的架构设计、核心特性、优缺点进行系统分析，并给出选型建议。</p>
+  </div>
+  <div class="report-section">
+    <h3><span class="num">2.</span>主流网络库架构分析</h3>
+    <table>
+      <tr><th>库名称</th><th>架构特点</th><th>优点</th><th>缺点</th><th>适用场景</th></tr>
+      <tr><td><b>Boost.Asio</b></td><td>Proactor / Reactor 模型</td><td>跨平台、功能完整、社区活跃</td><td>学习曲线较高、相对复杂</td><td>通用服务器、高并发应用</td></tr>
+      <tr><td><b>libevent</b></td><td>事件驱动（Reactor）</td><td>轻量级、简单易用、性能稳定</td><td>功能有限、不支持 C++ 高级特性</td><td>高并发网络服务、简单场景</td></tr>
+      <tr><td><b>muduo</b></td><td>Reactor（基于 epoll）</td><td>高性能、代码简洁、易于理解</td><td>社区活跃度下降、功能单一</td><td>高性能服务器、实时应用</td></tr>
+      <tr><td><b>Seastar</b></td><td>分布式 Actor 模型</td><td>极高并发、低延迟</td><td>学习成本高、生态不完善</td><td>高性能计算、分布式系统</td></tr>
+    </table>
+  </div>
+  <div class="report-section">
+    <h3><span class="num">3.</span>关键对比与选型建议</h3>
+    <div class="tip-box">
+      <span class="ic">💡</span>
+      <div class="txt"><b>推荐：</b>对于大多数高性能网络服务，推荐使用 <b>Boost.Asio</b> 或 <b>muduo</b>。如果追求极致性能且有较强技术团队，可考虑 <b>Seastar</b>。</div>
+    </div>
+    <p><b>选择建议：</b></p>
+    <ul>
+      <li>需要跨平台和丰富功能：选择 <b>Boost.Asio</b></li>
+      <li>追求轻量级和简单开发：选择 <b>libevent</b></li>
+      <li>注重极致性能和简洁代码：选择 <b>muduo</b></li>
+      <li>大规模分布式系统：选择 <b>Seastar</b></li>
+    </ul>
+  </div>
+`;
+const SOURCES_HTML = `
+  <h3 style="font-size:14px;margin-bottom:14px;">来源引用</h3>
+  <div style="display:flex;flex-direction:column;gap:8px;">
+    <div class="chunk"><div class="idx">[1]</div><div class="txt">Boost.Asio 官方文档</div><div class="foot"><span class="tag cat">www.boost.org</span></div></div>
+    <div class="chunk"><div class="idx">[2]</div><div class="txt">libevent 官方文档</div><div class="foot"><span class="tag cat">libevent.org</span></div></div>
+    <div class="chunk"><div class="idx">[3]</div><div class="txt">muduo 项目主页</div><div class="foot"><span class="tag cat">github.com/chenshuo/muduo</span></div></div>
+    <div class="chunk"><div class="idx">[4]</div><div class="txt">Seastar 官方文档</div><div class="foot"><span class="tag cat">seastar.io</span></div></div>
+  </div>
+`;
+const TRACE_HTML = `
+  <h3 style="font-size:14px;margin-bottom:14px;">执行轨迹</h3>
+  <div style="font-size:12px;color:var(--text-2);line-height:2.2">
+    ✅ 拆分研究问题 — 生成 5 个子问题<br>
+    ✅ 制定研究计划 — 规划检索策略<br>
+    ✅ 搜索与收集资料 — 检索 8 条，解析 3 个网页<br>
+    ✅ 分析与交叉验证 — 去重整合<br>
+    ✅ 生成研究报告 — 输出 Markdown
+  </div>
+`;
+
+function buildExecUI() {
+  $('#execScroll').innerHTML = `
+    <div class="exec-head">
+      <div class="left">
+        <div class="spinner-lg"></div>
+        <div>
+          <div class="title">研究执行中</div>
+          <div class="desc">Agent 正在自主规划和执行研究任务...</div>
+        </div>
+      </div>
+      <div class="eta">预计剩余时间：2-3 分钟</div>
+    </div>
+    <div class="timeline">
+      ${STEPS.map((s,i)=>`
+        <div class="tl-item" id="step-${s.key}">
+          <div class="tl-node">${i+1}</div>
+          <div class="tl-title">${s.title}<span class="check" id="check-${s.key}"></span></div>
+          <div class="tl-desc">${s.desc}</div>
+          <div class="sub-logs" id="logs-${s.key}"></div>
+        </div>`).join('')}
+    </div>
+    <div class="log-panel">
+      <div class="log-head"><span class="t">实时日志</span><span class="more">显示全部日志 ›</span></div>
+      <div id="realtimeLogs"></div>
+    </div>`;
+}
+function setStepState(key, state) {
+  const el = $('#step-' + key);
+  el.classList.remove('active','done');
+  el.classList.add(state);
+  if (state === 'done') $('#check-' + key).textContent = '✓';
+}
+function addSubLog(k, icon, html) {
+  const div = document.createElement('div');
+  div.className = 'sub-log';
+  div.innerHTML = `<span class="ic">${icon}</span><span>${html}</span>`;
+  $('#logs-' + k).appendChild(div);
+}
+function addRealtimeLog(msg) {
+  const now = new Date();
+  const t = [now.getHours(), now.getMinutes(), now.getSeconds()].map(x => String(x).padStart(2,'0')).join(':');
+  const div = document.createElement('div');
+  div.className = 'log-line';
+  div.innerHTML = `<span class="time">${t}</span><span class="msg">${msg}</span>`;
+  $('#realtimeLogs').appendChild(div);
+}
+function setStatus(txt) { $('#demoStatus').textContent = txt; }
+
+async function typeText(el, text, speed = 28) {
+  el.value = '';
+  const box = $('#searchBox');
+  box.classList.add('focus');
+  for (let i = 0; i < text.length; i++) {
+    el.value += text[i];
+    if (i % 8 === 0) {
+      const tags = decomposeTitle(el.value);
+      currentTags.length = 0;
+      currentTags.push(...tags);
+      renderTags();
+    }
+    await sleep(speed);
+  }
+  box.classList.remove('focus');
+  const tags = decomposeTitle(text);
+  currentTags.length = 0;
+  currentTags.push(...tags);
+  renderTags();
+}
+
+async function runResearch({ id, title, shouldFail = false }) {
+  const btn = $('#startBtn');
+  btn.disabled = true;
+
+  researchLayout.classList.remove('right-collapsed');
+  panelToggle.textContent = '›';
+  $('#reportBody').innerHTML = `<div class="placeholder"><div class="big">📄</div>研究报告将在研究完成后生成</div>`;
+  $('#reportFoot').style.display = 'none';
+
+  setStatus('输入中...');
+  await typeText($('#query'), title, 26);
+  await sleep(200);
+  setStatus('执行中...');
+  buildExecUI();
+
+  addRunning(id, title.slice(0, 18) + '...');
+  setStepState('plan','active'); await sleep(550);
+  addSubLog('plan','✅', `已生成 ${currentTags.length} 个子问题：${currentTags.join('、')}`);
+  setStepState('plan','done');
+  addRealtimeLog('任务拆解完成');
+  updateRunning(id, { stage: '制定计划', progress: 2 });
+
+  setStepState('scheme','active'); await sleep(500);
+  addSubLog('scheme','✅','规划检索来源、工具调用顺序和信息整合策略');
+  setStepState('scheme','done');
+  addRealtimeLog('研究计划已制定');
+  updateRunning(id, { stage: '检索中', progress: 3 });
+
+  setStepState('search','active'); await sleep(400);
+  addSubLog('search','🔍','正在搜索：' + title.slice(0, 20) + '...');
+  addRealtimeLog('开始搜索');
+  await sleep(600);
+  addSubLog('search','🔗','正在读取网页内容...');
+  addRealtimeLog('找到 8 条相关结果');
+  await sleep(500);
+  if (shouldFail) {
+    removeRunning(id, { failed: true, error: '检索超时（网络请求 30s 无响应）' });
+    btn.disabled = false;
+    setStatus('❌ 失败');
+    return;
+  }
+  addSubLog('search','📄','正在提取关键信息...');
+  addRealtimeLog('正在提取关键信息');
+  await sleep(500);
+  setStepState('search','done');
+  updateRunning(id, { stage: '交叉验证', progress: 4 });
+
+  setStepState('verify','active'); await sleep(600);
+  addSubLog('verify','✅','对多来源信息进行去重、验证和整理');
+  setStepState('verify','done');
+  addRealtimeLog('交叉验证完成');
+  updateRunning(id, { stage: '生成报告', progress: 5 });
+
+  setStepState('write','active'); await sleep(600);
+  addSubLog('write','✅','生成带引用的 Markdown 报告');
+  setStepState('write','done');
+  addRealtimeLog('研究报告生成完成');
+
+  const head = document.querySelector('.exec-head');
+  if (head) {
+    head.querySelector('.spinner-lg').style.display = 'none';
+    head.querySelector('.title').textContent = '研究完成';
+    head.querySelector('.desc').textContent = '报告已生成，可查看右侧结果';
+    head.querySelector('.eta').textContent = '总耗时 约 12 秒';
+  }
+
+  $('#reportBody').innerHTML = REPORT_HTML;
+  $('#reportFoot').style.display = 'flex';
+  btn.disabled = false;
+  setStatus('✅ 完成');
+  removeRunning(id);
+
+  const h = state.history.find(x => x.id === id);
+  if (h) { h.status = 'done'; h.sources = 5; h.words = '3,200'; h.reportKey = 'netlib'; }
+  toast('研究完成，已记录到研究历史');
+}
+
+async function runFlow() {
+  switchView('research');
+  const newId = 'H' + (Date.now() % 100000);
+  state.history.unshift({
+    id: newId, title: 'C++ 高性能网络库架构设计与选型分析',
+    status: 'running', sources: 0, words: '—', time: '刚刚',
+    sunk: false, reportKey: null, followups: []
+  });
+  await runResearch({ id: newId, title: QUERY_TEXT });
+}
+async function runFlowFail() {
+  switchView('research');
+  const newId = 'H' + (Date.now() % 100000);
+  state.history.unshift({
+    id: newId, title: '某不稳定数据源的研究（会失败）',
+    status: 'running', sources: 0, words: '—', time: '刚刚',
+    sunk: false, reportKey: null, followups: []
+  });
+  await runResearch({ id: newId, title: '某不稳定数据源的研究（会失败）', shouldFail: true });
+}
+
+$$('#view-research .tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    $$('#view-research .tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const which = tab.dataset.tab;
+    if (which === 'report') $('#reportBody').innerHTML = REPORT_HTML;
+    else if (which === 'sources') $('#reportBody').innerHTML = SOURCES_HTML;
+    else $('#reportBody').innerHTML = TRACE_HTML;
+  });
+});
+
+/* ================= 沉淀到知识库 ================= */
+$('#sinkBtn').addEventListener('click', () => {
+  const exists = state.kbDocs.find(d => d.name === 'C++网络库选型研究报告.md');
+  if (exists) { toast('该报告已在知识库中', 'warn'); return; }
+  state.kbDocs.unshift({
+    id: Date.now(), icon:'📗', type:'md', name:'C++网络库选型研究报告.md',
+    badge:'研究沉淀', badgeType:'green',
+    meta:['来自研究任务 #A3F2','5 个来源','刚刚更新','18 个分块'],
+    cat:'net',
+    content:`# C++网络库选型研究报告\n\n（从研究沉淀而来）\n\n## 选型建议\n通用场景推荐 Boost.Asio 或 muduo；极致性能可考虑 Seastar。`,
+    chunkPreview:[
+      'Boost.Asio 是基于 Proactor 模型的跨平台 C++ 网络库，支持同步与异步两种编程风格，功能完整但学习曲线较陡。',
+      'libevent 采用事件驱动（Reactor）模型，轻量级、API 简单，适合对性能要求高但对功能要求不复杂的场景。',
+      'muduo 是基于 epoll 的 Reactor 网络库，代码简洁、性能优异，作者陈硕，适合学习与中小型高性能服务器开发。',
+      '选型建议：通用场景推荐 Boost.Asio 或 muduo；极致性能可考虑 Seastar，但需评估团队学习成本。'
+    ]
+  });
+  state.history.forEach(h => { if (h.title.includes('高性能网络库')) h.sunk = true; });
+  $('#sinkBtn').textContent = '✅ 已沉淀';
+  $('#sinkBtn').classList.add('done');
+  $('#sinkBtn').disabled = true;
+  toast('已沉淀到知识库 · 分类：网络编程');
+});
+
+/* ================= 知识库 ================= */
+const CATS = [
+  { id:'net',  ico:'🌐', name:'网络编程', cnt:32, keys:'epoll、Reactor、高并发、TCP' },
+  { id:'llm',  ico:'🤖', name:'LLM 应用', cnt:28, keys:'Agent、Function Calling、提示词' },
+  { id:'rag',  ico:'📚', name:'RAG',      cnt:21, keys:'向量检索、分块、Rerank' },
+  { id:'sys',  ico:'⚙️', name:'系统设计', cnt:15, keys:'分布式、缓存、消息队列' },
+  { id:'db',   ico:'🗄️', name:'数据库',   cnt:12, keys:'索引、事务、MySQL' },
+  { id:'job',  ico:'🎯', name:'面试八股', cnt:10, keys:'高频题、手撕、八股文' },
+];
+
+/* 分类下拉 */
+function renderCatDropdown() {
+  const total = state.kbDocs.length;
+  const opts = [
+    { id:'all', ico:'📂', name:'全部分类', cnt: total },
+    ...CATS.map(c => ({ id:c.id, ico:c.ico, name:c.name, cnt: state.kbDocs.filter(d => d.cat === c.id).length }))
+  ];
+  $('#catDropdown').innerHTML = opts.map(o => `
+    <div class="cat-opt ${state.catFilter === o.id ? 'on' : ''}" onclick="setCatFilter('${o.id}')">
+      <span class="ico">${o.ico}</span>
+      <span class="n">${o.name}</span>
+      <span class="cnt">${o.cnt}</span>
+    </div>
+  `).join('');
+  const cur = opts.find(o => o.id === state.catFilter);
+  if (cur) $('#catSelectLabel').textContent = cur.ico + ' ' + cur.name;
+}
+window.setCatFilter = function(id) {
+  state.catFilter = id;
+  $('#catSelect').classList.remove('open');
+  renderCatDropdown();
+  renderKbContent();
+};
+$('#catSelectBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  $('#catSelect').classList.toggle('open');
+});
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#catSelect')) $('#catSelect').classList.remove('open');
+});
+
+/* 单搜索框 */
+$('#kbSearchInput').addEventListener('input', (e) => {
+  state.searchQuery = e.target.value.trim();
+  renderKbContent();
+});
+$('#kbSearchInput').addEventListener('focus', () => $('#kbSearchBox').classList.add('focus'));
+$('#kbSearchInput').addEventListener('blur', () => $('#kbSearchBox').classList.remove('focus'));
+$('#advToggle').addEventListener('click', () => {
+  $('#advPanel').classList.toggle('open');
+});
+
+/* 检索算法（内部用，用户看不到） */
+function keywordSearch(query) {
+  if (!query.trim()) return [];
+  const terms = query.toLowerCase().split(/\s+|,|，/).filter(Boolean);
+  const r = [];
+  state.kbDocs.forEach(d => {
+    const lower = (d.content || '').toLowerCase();
+    let score = 0;
+    terms.forEach(t => { if (lower.includes(t)) score += (lower.split(t).length - 1) * 2; });
+    if (lower.includes(query.toLowerCase())) score += 5;
+    if (score > 0) r.push({ ...d, score });
+  });
+  return r.sort((a,b) => b.score - a.score);
+}
+const SEMANTIC_MAP = [
+  { intent:['高并发','扛住','并发','性能'], target:['net'], bonus:['多路复用','事件循环','非阻塞','epoll','Reactor'] },
+  { intent:['记忆','记住','之前','历史','上下文'], target:['llm'], bonus:['记忆','向量数据库','滑动窗口','召回','历史'] },
+  { intent:['轻量','简单','容易','上手'], target:['net'], bonus:['轻量级','简单','代码简洁'] },
+  { intent:['选型','选哪个','推荐','比较'], target:['net'], bonus:['选型','场景','适合'] },
+  { intent:['优化','提升','改进'], target:['rag'], bonus:['优化','切分','检索增强','Rerank'] },
+];
+function semanticSearch(query) {
+  if (!query.trim()) return [];
+  const q = query.toLowerCase();
+  const matched = SEMANTIC_MAP.filter(m => m.intent.some(k => q.includes(k)));
+  const r = [];
+  state.kbDocs.forEach(d => {
+    let score = 0;
+    matched.forEach(m => {
+      if (m.target.includes(d.cat)) score += 3;
+      m.bonus.forEach(b => { if ((d.content||'').includes(b)) score += 2; });
+    });
+    q.split(/\s+/).filter(t => t.length >= 2).forEach(t => { if ((d.content||'').toLowerCase().includes(t)) score += 1; });
+    if (score > 0) {
+      const sim = Math.min(0.95, 0.5 + score * 0.05).toFixed(3);
+      r.push({ ...d, score, sim });
+    }
+  });
+  return r.sort((a,b) => b.score - a.score);
+}
+function fuseResults(kw, sem) {
+  const map = new Map();
+  kw.forEach((r,i) => map.set(r.id, { ...r, kwRank:i+1, semRank:null, rrf:1/(60+i+1) }));
+  sem.forEach((r,i) => {
+    if (map.has(r.id)) { const o = map.get(r.id); o.semRank = i+1; o.rrf += 1/(60+i+1); }
+    else map.set(r.id, { ...r, kwRank:null, semRank:i+1, rrf:1/(60+i+1) });
+  });
+  return [...map.values()].sort((a,b) => b.rrf - a.rrf);
+}
+
+/* 高亮 */
+function highlight(text, terms) {
+  if (!terms || !terms.length) return text;
+  let out = text;
+  terms.forEach(t => {
+    if (t.length < 1) return;
+    const re = new RegExp(`(${t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi');
+    out = out.replace(re, '<mark>$1</mark>');
+  });
+  return out;
+}
+
+function catName(id) {
+  const c = CATS.find(x => x.id === id);
+  return c ? c.ico + ' ' + c.name : '未分类';
+}
+
+/* 过滤文档（分类 + 搜索） */
+function getFilteredDocs() {
+  let docs = state.kbDocs;
+  if (state.catFilter !== 'all') docs = docs.filter(d => d.cat === state.catFilter);
+  if (state.searchQuery) {
+    const kw = keywordSearch(state.searchQuery);
+    const sem = semanticSearch(state.searchQuery);
+    const fused = fuseResults(kw, sem);
+    // 只保留在当前分类里的
+    const allowedIds = new Set(docs.map(d => d.id));
+    return { list: fused.filter(d => allowedIds.has(d.id)), fused, kw, sem, searchMode: true };
+  }
+  return { list: docs, searchMode: false };
+}
+
+/* 渲染知识库主内容 */
+function renderKbContent() {
+  const { list, fused, kw, sem, searchMode } = getFilteredDocs();
+
+  // 结果计数
+  const catLabel = state.catFilter === 'all' ? '全部分类' : catName(state.catFilter);
+  if (searchMode) {
+    $('#resultBar').innerHTML = `<span>「<b>${state.searchQuery}</b>」的搜索结果 · ${catLabel} · 共 <b>${list.length}</b> 条</span><span style="font-size:10.5px">仅显示前 ${Math.min(3, list.length)} 条</span>`;
+  } else {
+    $('#resultBar').innerHTML = `<span>${catLabel} · 共 <b>${list.length}</b> 篇文档</span>`;
+  }
+
+  // 高级对比面板
+  if (searchMode && (kw.length || sem.length)) {
+    $('#advBody').innerHTML = `
+      <div class="adv-block">
+        <div class="adv-block-title"><span class="adv-dot kw"></span>关键词检索（BM25）命中 ${kw.length} 条</div>
+        ${kw.slice(0,3).map((r,i) => `
+          <div class="adv-hit"><span class="rk">#${i+1}</span><span class="tx">${r.name}</span><span class="sc kw">${r.score.toFixed(1)}</span></div>
+        `).join('') || '<div style="font-size:11px;color:var(--text-3)">无命中</div>'}
+      </div>
+      <div class="adv-block">
+        <div class="adv-block-title"><span class="adv-dot sem"></span>语义检索（向量）命中 ${sem.length} 条</div>
+        ${sem.slice(0,3).map((r,i) => `
+          <div class="adv-hit"><span class="rk">#${i+1}</span><span class="tx">${r.name}</span><span class="sc sem">${r.sim}</span></div>
+        `).join('') || '<div style="font-size:11px;color:var(--text-3)">无命中</div>'}
+      </div>
+      <div class="adv-block">
+        <div class="adv-block-title"><span class="adv-dot fuse"></span>RRF 融合后最终排序</div>
+        ${fused.slice(0,3).map((r,i) => `
+          <div class="adv-hit"><span class="rk">#${i+1}</span><span class="tx">${r.name}</span><span class="sc fuse">${r.rrf.toFixed(4)}</span></div>
+        `).join('')}
+      </div>
+    `;
+  } else {
+    $('#advBody').innerHTML = `<div style="font-size:11px;color:var(--text-3);padding:8px 0">输入搜索词后，这里会显示关键词/语义/RRF 的详细对比。</div>`;
+  }
+
+  // 主内容
+  if (searchMode) {
+    // ★ 搜索结果：只显示前 3 条，带来源引用
+    const top3 = list.slice(0, 3);
+    if (top3.length === 0) {
+      $('#kbContent').innerHTML = `
+        <div class="empty-result">
+          <div class="big">🔍</div>
+          没有找到相关内容<br>
+          <span style="font-size:11.5px">试试换个说法，或切换分类</span>
+        </div>`;
+      return;
+    }
+    const terms = state.searchQuery.toLowerCase().split(/\s+|,|，/).filter(Boolean);
+    $('#kbContent').innerHTML = `
+      <div class="search-results">
+        ${top3.map((d, i) => `
+          <div class="sr-item" onclick="openKbDetail(${d.id})">
+            <div class="sr-head">
+              <span class="idx">${i+1}</span>
+              <span class="src-name">${d.icon} ${d.name}</span>
+              <span class="cat-tag">${catName(d.cat)}</span>
+              <span class="score">匹配度 ${(d.rrf ? (d.rrf*100).toFixed(1) : (d.score*5).toFixed(1))}</span>
+            </div>
+            <div class="sr-text">${highlight((d.content || '').slice(0, 180), terms)}...</div>
+            <div class="sr-cite">
+              <span>📎 引用来源：</span>
+              <span class="link" onclick="event.stopPropagation();toast('打开来源：${d.meta[0]}')">
+                🔗 ${d.meta[0]}
+              </span>
+            </div>
+          </div>
+        `).join('')}
+      </div>`;
+  } else {
+    // ★ 文档列表（含删除/查看）
+    if (list.length === 0) {
+      $('#kbContent').innerHTML = `
+        <div class="empty-result">
+          <div class="big">📂</div>
+          该分类下暂无文档
+        </div>`;
+      return;
+    }
+    $('#kbContent').innerHTML = `
+      <div class="doc-list">
+        ${list.map(d => `
+          <div class="doc-item" data-id="${d.id}">
+            <div class="doc-icon ${d.type}">${d.icon}</div>
+            <div class="doc-main" onclick="openKbDetail(${d.id})">
+              <div class="doc-name">${d.name} <span class="badge ${d.badgeType || ''}">${d.badge}</span></div>
+              <div class="doc-meta">
+                ${d.meta.map(m => `<span class="${m.includes('向量') ? 'ok' : ''}">${m}</span>`).join('')}
+                <span class="cat-tag">📂 ${catName(d.cat)}</span>
+              </div>
+            </div>
+            <div class="doc-actions">
+              <button class="doc-act" title="查看全文" onclick="event.stopPropagation();viewDocFull(${d.id})">👁</button>
+              <button class="doc-act del" title="删除" onclick="event.stopPropagation();confirmDeleteDoc(${d.id})">🗑</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>`;
+  }
+}
+
+function renderKb() { renderCatDropdown(); renderKbContent(); }
+
+/* 查看文档全文 */
+window.viewDocFull = function(id) {
+  const d = state.kbDocs.find(x => x.id === id);
+  if (!d) return;
+  openModal({
+    title: `${d.icon} ${d.name} <span class="badge ${d.badgeType||''}" style="font-size:10px;padding:2px 8px;border-radius:5px;background:#1a2740;color:#93c5fd;">${d.badge}</span>`,
+    body: `
+      <div style="font-size:11.5px;color:var(--text-3);margin-bottom:14px;display:flex;gap:14px;flex-wrap:wrap">
+        ${d.meta.map(m => `<span>${m}</span>`).join('')}
+        <span>📂 ${catName(d.cat)}</span>
+      </div>
+      <div style="white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.85;color:var(--text-2);background:#0f141c;padding:16px;border-radius:9px;border:1px solid var(--border)">${d.content || '（无内容）'}</div>
+    `,
+    foot: `
+      <button class="modal-btn" onclick="closeModal()">关闭</button>
+      <button class="modal-btn primary" onclick="closeModal();toast('已下载')">⬇ 下载</button>
+    `
+  });
+};
+
+/* 删除文档 */
+window.confirmDeleteDoc = function(id) {
+  const d = state.kbDocs.find(x => x.id === id);
+  if (!d) return;
+  openModal({
+    title: '⚠️ 删除文档',
+    body: `确认删除 <b style="color:var(--text)">「${d.name}」</b> 吗？<br><br><span style="color:var(--text-3);font-size:12px">此操作不可恢复。如果该文档来自研究沉淀，删除后研究历史记录仍会保留。</span>`,
+    foot: `
+      <button class="modal-btn" onclick="closeModal()">取消</button>
+      <button class="modal-btn danger" onclick="doDeleteDoc(${id})">确认删除</button>
+    `
+  });
+};
+window.doDeleteDoc = function(id) {
+  const idx = state.kbDocs.findIndex(x => x.id === id);
+  if (idx < 0) return;
+  const name = state.kbDocs[idx].name;
+  state.kbDocs.splice(idx, 1);
+  closeModal();
+  renderKb();
+  toast(`已删除「${name}」`, 'warn');
+};
+
+/* 打开右侧详情 */
+function openKbDetail(id) {
+  const d = state.kbDocs.find(x => x.id === id);
+  if (!d) return;
+  $('#kbDetailBody').innerHTML = `
+    <div class="detail-head">
+      <button class="detail-close" onclick="closeKbDetail()">✕</button>
+      <div class="detail-title">${d.icon} ${d.name}</div>
+      <div class="detail-sub">${d.badge} · ${d.meta[d.meta.length-1]}</div>
+      <div class="detail-actions">
+        <button class="detail-act" onclick="viewDocFull(${d.id})">👁 查看全文</button>
+        <button class="detail-act del" onclick="confirmDeleteDoc(${d.id})">🗑 删除</button>
+      </div>
+    </div>
+    <div class="meta-grid">
+      <div class="meta-item"><div class="k">所属分类</div><div class="v">${catName(d.cat)}</div></div>
+      <div class="meta-item"><div class="k">来源</div><div class="v">${d.meta[0]}</div></div>
+      <div class="meta-item"><div class="k">向量模型</div><div class="v">text-embedding-3</div></div>
+      <div class="meta-item"><div class="k">向量维度</div><div class="v">1536</div></div>
+      <div class="meta-item"><div class="k">状态</div><div class="v ok">✓ 已向量化</div></div>
+      <div class="meta-item"><div class="k">更新时间</div><div class="v">${d.meta[d.meta.length-2]}</div></div>
+    </div>
+    <div class="chunk-head"><span>分块预览（Chunk）</span><span class="cnt">前 ${d.chunkPreview.length} 块</span></div>
+    <div class="chunk-list">
+      ${d.chunkPreview.map((c,i) => `
+        <div class="chunk"><div class="idx">CHUNK #${i+1}</div><div class="txt">${c}</div>
+          <div class="foot"><span class="tag">✓ 向量已生成</span><span class="tag cat">📂 ${catName(d.cat)}</span></div></div>
+      `).join('')}
+    </div>`;
+}
+window.closeKbDetail = function() {
+  $('#kbDetailBody').innerHTML = `<div class="empty-detail"><div class="big">📄</div>点击左侧文档<br>查看分块与向量详情</div>`;
+};
+
+/* ================= 研究历史 ================= */
+function renderHistory() {
+  $('#historyList').innerHTML = state.history.map(h => {
+    const stText = h.status === 'done' ? '已完成' : h.status === 'running' ? '进行中' : '失败';
+    const stIcon = h.status === 'done' ? '✅' : h.status === 'running' ? '⏳' : '❌';
+    const fuCount = (h.followups || []).length;
+    const fuOpen = h._fuOpen ? 'open' : '';
+    return `
+    <div class="hist-item" data-id="${h.id}">
+      <div class="hist-main" onclick="openHistoryReport('${h.id}')">
+        <div class="hist-status ${h.status}">${stIcon}</div>
+        <div class="hist-body">
+          <div class="hist-title-line">
+            ${h.title}
+            <span class="st ${h.status}">${stText}</span>
+            ${h.sunk ? '<span class="st sunk">已沉淀</span>' : ''}
+          </div>
+          <div class="hist-meta">
+            <span>🕐 ${h.time}</span>
+            ${h.sources ? `<span>📚 ${h.sources} 个来源</span>` : ''}
+            ${h.words !== '—' ? `<span>📝 ${h.words} 字</span>` : ''}
+          </div>
+        </div>
+      </div>
+      <div class="hist-actions">
+        <button class="ha-btn" onclick="event.stopPropagation();viewReport('${h.id}')">📄 查看报告</button>
+        <button class="ha-btn" onclick="event.stopPropagation();continueResearch('${h.id}')">🔄 继续研究</button>
+        <button class="ha-btn primary" onclick="event.stopPropagation();askFollowup('${h.id}')">💬 基于此追问</button>
+        <button class="ha-btn sink" ${h.sunk ? 'disabled' : ''} onclick="event.stopPropagation();sinkFromHistory('${h.id}')">
+          ${h.sunk ? '✅ 已沉淀' : '📥 沉淀到知识库'}
+        </button>
+        <button class="ha-btn danger" onclick="event.stopPropagation();confirmDeleteHistory('${h.id}')">🗑 删除</button>
+      </div>
+      ${fuCount > 0 ? `
+        <div class="followups ${fuOpen}" id="fu-wrap-${h.id}">
+          <div class="followups-toggle" onclick="event.stopPropagation();toggleFollowups('${h.id}')">
+            <span class="arrow">▶</span>
+            <span>💬 ${fuCount} 条追问</span>
+          </div>
+          <div class="followups-list">
+            ${h.followups.map(f => `
+              <div class="fu-item">
+                <div class="fu-icon">💬</div>
+                <div class="fu-body">
+                  <div class="fu-q"><b>追问：</b>${f.q}</div>
+                  <div class="fu-meta">
+                    <span class="st ${f.status}">${f.status === 'done' ? '已完成' : '进行中'}</span>
+                    ${f.sources ? `<span>📚 ${f.sources} 个来源</span>` : ''}
+                    ${f.words && f.words !== '—' ? `<span>📝 ${f.words} 字</span>` : ''}
+                    <span>🕐 ${f.time}</span>
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>` : ''}
+      <div id="ask-${h.id}"></div>
+    </div>
+  `}).join('');
+}
+
+window.toggleFollowups = function(id) {
+  const h = state.history.find(x => x.id === id);
+  h._fuOpen = !h._fuOpen;
+  const wrap = document.getElementById('fu-wrap-' + id);
+  if (wrap) wrap.classList.toggle('open', h._fuOpen);
+};
+window.openHistoryReport = function(id) {
+  const h = state.history.find(x => x.id === id);
+  if (!h || h.status !== 'done') return;
+  switchView('research');
+  researchLayout.classList.remove('right-collapsed');
+  panelToggle.textContent = '›';
+  $('#reportBody').innerHTML = REPORT_HTML;
+  $('#reportFoot').style.display = 'flex';
+  $('#query').value = h.title;
+  toast('已打开该研究的报告');
+};
+window.viewReport = function(id) { window.openHistoryReport(id); };
+window.continueResearch = function(id) {
+  const h = state.history.find(x => x.id === id);
+  if (!h) return;
+  switchView('research');
+  $('#query').value = h.title + ' —— 继续深入';
+  const rid = 'R' + Date.now();
+  addRunning(rid, '继续：' + h.title.slice(0, 14) + '...');
+  updateRunning(rid, { stage: '补充检索', progress: 2 });
+  setTimeout(() => removeRunning(rid), 3000);
+  toast('已基于上次研究继续');
+};
+window.askFollowup = function(id) {
+  const h = state.history.find(x => x.id === id);
+  if (!h) return;
+  const box = document.getElementById('ask-' + id);
+  if (box.dataset.open === '1') { box.innerHTML = ''; box.dataset.open = '0'; return; }
+  box.dataset.open = '1';
+  box.innerHTML = `
+    <div class="ask-box">
+      <div class="qb">💬 基于 <b>「${h.title}」</b> 追问</div>
+      <div class="ask-input-row">
+        <input placeholder="例如：再深入对比一下 Seastar 的性能..." onkeydown="if(event.key==='Enter')doAsk('${id}')" id="askInput-${id}" />
+        <button onclick="doAsk('${id}')">追问</button>
+      </div>
+    </div>`;
+  setTimeout(() => document.getElementById('askInput-' + id)?.focus(), 50);
+};
+window.doAsk = function(id) {
+  const input = document.getElementById('askInput-' + id);
+  const q = input?.value.trim();
+  if (!q) return;
+  const h = state.history.find(x => x.id === id);
+  if (!h) return;
+  if (!h.followups) h.followups = [];
+  h.followups.push({ id: 'F' + Date.now(), q, status: 'running', sources: 0, words: '—', time: '刚刚' });
+  h._fuOpen = true;
+  const rid = 'F' + Date.now();
+  addRunning(rid, '追问：' + q.slice(0, 14) + '...');
+  updateRunning(rid, { stage: '检索中', progress: 2 });
+  toast('已发起追问，正在研究...');
+  renderHistory();
+  setTimeout(() => {
+    const f = h.followups[h.followups.length - 1];
+    if (f) {
+      f.status = 'done'; f.sources = 3; f.words = '1,200';
+      renderHistory();
+      removeRunning(rid);
+      toast('追问研究完成');
+    }
+  }, 3000);
+};
+window.sinkFromHistory = function(id) {
+  const h = state.history.find(x => x.id === id);
+  if (!h || h.sunk) return;
+  h.sunk = true;
+  const exists = state.kbDocs.find(d => d.name.includes('网络库') || d.name.includes(h.title.slice(0,8)));
+  if (!exists) {
+    state.kbDocs.unshift({
+      id: Date.now(), icon:'📗', type:'md',
+      name: h.title.slice(0, 20) + '.md',
+      badge:'研究沉淀', badgeType:'green',
+      meta:[`来自研究任务 #${h.id}`, `${h.sources} 个来源`, '刚刚更新', '18 个分块'],
+      cat:'net',
+      content:`# ${h.title}\n\n（从研究沉淀而来）`,
+      chunkPreview:[
+        'Boost.Asio 是基于 Proactor 模型的跨平台 C++ 网络库。',
+        'libevent 采用事件驱动（Reactor）模型，轻量级、API 简单。',
+        'muduo 是基于 epoll 的 Reactor 网络库。'
+      ]
+    });
+  }
+  toast('已沉淀到知识库');
+  renderHistory();
+  if ($('#view-kb').classList.contains('active')) renderKb();
+};
+
+/* ★ 删除研究历史 */
+window.confirmDeleteHistory = function(id) {
+  const h = state.history.find(x => x.id === id);
+  if (!h) return;
+  const fuCount = (h.followups || []).length;
+  const sunkTip = h.sunk
+    ? `✅ 该研究<b style="color:#86efac">已沉淀到知识库</b>，删除历史记录后，知识库中的文档仍会保留。`
+    : `⚠️ 该研究<b style="color:#fcd34d">尚未沉淀到知识库</b>，删除后内容无法恢复。`;
+  const fuTip = fuCount > 0 ? `<br>💬 该研究有 <b>${fuCount}</b> 条追问，也会一并删除。` : '';
+  openModal({
+    title: '⚠️ 删除研究记录',
+    body: `确认删除 <b style="color:var(--text)">「${h.title}」</b> 吗？<br><br>${sunkTip}${fuTip}`,
+    foot: `
+      <button class="modal-btn" onclick="closeModal()">取消</button>
+      <button class="modal-btn danger" onclick="doDeleteHistory('${id}')">确认删除</button>
+    `
+  });
+};
+window.doDeleteHistory = function(id) {
+  const idx = state.history.findIndex(x => x.id === id);
+  if (idx < 0) return;
+  const name = state.history[idx].title;
+  state.history.splice(idx, 1);
+  closeModal();
+  renderHistory();
+  toast(`已删除研究记录「${name}」`, 'warn');
+};
+
+/* ================= 通用 ================= */
+$('#demoBtn').addEventListener('click', runFlow);
+$('#demoFailBtn').addEventListener('click', runFlowFail);
+$('#resetBtn').addEventListener('click', () => {
+  $('#query').value = '';
+  currentTags.length = 0; renderTags();
+  $('#execScroll').innerHTML = `<div class="placeholder"><div class="big">🔬</div>输入研究主题，点击「开始研究」<br>Agent 将自动拆解任务、检索资料并生成报告</div>`;
+  $('#reportBody').innerHTML = `<div class="placeholder"><div class="big">📄</div>研究报告将在研究完成后生成</div>`;
+  $('#reportFoot').style.display = 'none';
+  $('#startBtn').disabled = false;
+  $('#sinkBtn').textContent = '📥 沉淀到知识库';
+  $('#sinkBtn').classList.remove('done');
+  $('#sinkBtn').disabled = false;
+  setStatus('待播放');
+});
+$('#startBtn').addEventListener('click', () => {
+  const v = $('#query').value.trim();
+  if (!v) { toast('请先输入研究主题', 'warn'); return; }
+  const newId = 'H' + (Date.now() % 100000);
+  state.history.unshift({
+    id: newId, title: v, status: 'running', sources: 0, words: '—', time: '刚刚',
+    sunk: false, reportKey: null, followups: []
+  });
+  runResearch({ id: newId, title: v });
+});
+$('#newResearchBtn').addEventListener('click', () => {
+  switchView('research');
+  $('#resetBtn').click();
+});
+
+/* ================= 初始化 ================= */
+renderCatDropdown();
+renderKbContent();
+renderHistory();
+renderTags();
+</script>
+</body>
+</html>
