@@ -48,7 +48,7 @@ def analyze_messages(
             blocks.append("（本轮没有抓到证据）")
         for src in sources:
             date = f" | {src.published_at[:10]}" if src.published_at else ""
-            blocks.append(f"[{src.n}] {src.title} | {src.domain}{date}")
+            blocks.append(f"[{src.n}] {src.title} | {src.domain}{date}（{src.tier_label}）")
             blocks.append((src.snippet or "")[:snippet_chars])
         blocks.append("")
 
@@ -129,7 +129,7 @@ def write_messages(
     evidence: list[str] = []
     for src in sources:
         date = f" | {src.published_at[:10]}" if src.published_at else ""
-        evidence.append(f"[{src.n}] {src.title} | {src.domain}{date}")
+        evidence.append(f"[{src.n}] {src.title} | {src.domain}{date}（{src.tier_label}）")
         evidence.append((src.snippet or "")[:600])
         evidence.append("")
 
