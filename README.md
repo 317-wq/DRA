@@ -4,7 +4,7 @@
 
 它是一个**本地工具**：数据在你自己电脑上，不需要注册登录，也不需要有人维护服务器。你只需要准备两个 API Key（模型 + 搜索）。
 
-当前版本：**1.0.0**。
+当前版本：**1.0.1**。
 - 目标架构与接口：`MVP/PROJECT.md`（v1.9）
 - 本版范围与验收：`MVP/MVP-1.0.md`
 - 后续路线：`MVP/ROADMAP.md`
@@ -20,7 +20,7 @@ macOS / Linux：
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv tool install dra          # 从 PyPI 安装
+uv tool install dra-research   # 从 PyPI 安装
 
 dra init                     # 选服务商、填两个 Key
 dra doctor                   # 检查 Key、端点、检索是否真的能用
@@ -31,7 +31,7 @@ Windows（PowerShell）：
 
 ```powershell
 powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-uv tool install dra
+uv tool install dra-research
 
 dra init
 dra doctor
@@ -44,7 +44,7 @@ dra run "2026 年主流 Agent 记忆机制方案对比"
 ### 方式 B：不安装，直接跑
 
 ```bash
-uvx dra run "2026 年主流 Agent 记忆机制方案对比"
+uvx --from dra-research dra run "2026 年主流 Agent 记忆机制方案对比"
 ```
 
 ### 方式 C：从 GitHub 安装（PyPI 不可用时）
@@ -58,11 +58,11 @@ uv tool install git+https://github.com/317-wq/DRA.git
 ### 升级与回滚
 
 ```bash
-uv tool upgrade dra          # 升级到最新
-uv tool install dra==1.0.0 --force   # 回滚到指定版本
+uv tool upgrade dra-research # 升级到最新
+uv tool install dra-research==1.0.1 --force   # 回滚到指定版本
 ```
 
-PyPI 发布状态见 <https://pypi.org/project/dra/>。维护者流程见 `RELEASE.md`。
+PyPI 发布状态见 <https://pypi.org/project/dra-research/>。命令仍是 `dra`。维护者流程见 `RELEASE.md`。
 
 ## 在 Windows 上跑演示
 
