@@ -25,6 +25,31 @@ jobs:
             dist/*.tar.gz
           generate_release_notes: true
 
+  portable-windows:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: 安装依赖与 PyInstaller
+        run: |
+          uv sync
+          uv pip install pyinstaller
+      - name: 打包便携版
+        run: uv run pyinstaller packaging/dra-desktop.spec --noconfirm
+      - name: 附加使用说明
+        shell: pwsh
+        run: Copy-Item packaging/PORTABLE-README.txt "dist/DRA/README.txt"
+      - name: 压缩
+        shell: pwsh
+        run: Compress-Archive -Path "dist/DRA/*" -DestinationPath "dist/DRA-portable-win64.zip" -Force
+      - name: 上传到 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/DRA-portable-win64.zip
+
   publish-pypi:
     # 在仓库 Settings → Variables 里设置 PUBLISH_TO_PYPI=true 才会执行。
     # 需要先在 PyPI 配置 Trusted Publisher（见 RELEASE.md）。
