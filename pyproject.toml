@@ -1,7 +1,7 @@
 [project]
 name = "dra"
-version = "0.1.0"
-description = "Deep Research Agent — 单主题端到端研究报告（MVP 0.1）"
+version = "0.2.0"
+description = "Deep Research Agent — 本地运行的研究报告生成工具（BYOK）"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -11,6 +11,7 @@ dependencies = [
     "rich>=13.7.0",
     "pydantic>=2.7.0",
     "pydantic-settings>=2.4.0",
+    "platformdirs>=4.2.0",
 ]
 
 [project.scripts]
