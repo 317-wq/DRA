@@ -192,6 +192,10 @@ class Settings(BaseSettings):
     request_timeout_s: float = Field(
         default=180.0, validation_alias=AliasChoices("DRA_REQUEST_TIMEOUT_S")
     )
+    kb_path: Path = Field(
+        default_factory=lambda: data_dir() / "kb.sqlite3",
+        validation_alias=AliasChoices("DRA_KB_PATH"),
+    )
 
     @classmethod
     def settings_customise_sources(
