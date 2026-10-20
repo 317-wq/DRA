@@ -1,6 +1,6 @@
 [project]
 name = "dra"
-version = "0.2.0"
+version = "0.2.1"
 description = "Deep Research Agent — 本地运行的研究报告生成工具（BYOK）"
 readme = "README.md"
 requires-python = ">=3.12"
