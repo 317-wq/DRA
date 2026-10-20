@@ -1,6 +1,6 @@
 # PROJECT · 深度研究代理（Deep Research Agent）
 
-> 基线版本：v1.2
+> 基线版本：v1.3
 > 最后更新：2026-10-20
 > 说明：本文档只放跨版本稳定的内容（目标架构、技术原则、稳定接口）。
 > 版本范围、依赖与验收见对应的 `MVP-x.y.md`。
@@ -59,7 +59,7 @@
 | 开发语言 | Python 3.12 | Agent 逻辑与生态最省事 |
 | 环境与依赖 | uv | 锁定依赖、跑得快，`uv run` 即入口 |
 | CLI 交互 | Typer + Rich | 0.1 阶段的验证入口，Rich 做实时进度 |
-| Web / API | FastAPI + SSE | 研究过程天然是事件流，SSE 比 WebSocket 简单 |
+| Web / API | FastAPI + SSE（uvicorn） | 研究过程天然是事件流，SSE 比 WebSocket 简单；只绑 127.0.0.1 |
 | 前端 | 原生 HTML/CSS/JS 单页 | 0.2 复用原型视觉，先不上构建链 |
 | 模型调用 | openai SDK + 兼容端点，统一 ModelAdapter | 换模型 / 换供应商不动业务代码；对 Qwen 默认关闭 thinking 以控时延 |
 | Agent 核心 | 手写 Agent Loop（显式状态 + 预算） | 研究流程的可控性优先于框架抽象 |
@@ -80,7 +80,10 @@
 
 > 只定边界，具体字段与参数放 MVP。字段名一旦写进这里，就按稳定接口对待。
 
-- CLI 入口：`dra init` 配置、`dra doctor` 自检、`dra run "<主题>"` 发起研究、`dra show <run_id>` 查看报告与轨迹、`dra list` 列出历史 Run。
+- CLI 入口：`dra init` 配置、`dra doctor` 自检、`dra run "<主题>"` 发起研究、`dra show <run_id>` 查看报告与轨迹、`dra list` 列出历史 Run、`dra ui` 打开本地界面。
+- 本地界面：只监听 `127.0.0.1`，自动开浏览器；不提供远程访问、不做多用户。
+- HTTP 接口：`GET /`、`GET/POST /api/runs`、`GET /api/runs/{id}`、`/report`、`/sources`、`/trace`、`/events`（SSE）。
+- 任务模型：本地单用户、单任务；已有研究在跑时再次发起返回 409。
 - 安装与分发：以 `uv tool install` / GitHub Release 为主；安装后不依赖仓库目录，配置与数据都在用户目录。
 - 配置优先级：初始化参数 > 环境变量（`DRA_*`，兼容 `QWEN_*` / `TAVILY_*`）> 用户 `config.toml` > 项目 `.env` > 默认值。
 - 模型服务：任意 OpenAI 兼容端点；`model` 为主模型，`fallback_models` 为降级链，某个模型不可用时按序切换。
@@ -113,4 +116,5 @@
 |---|---|---|
 | v1.0 | 2026-10-20 | 初版：从架构图与 `5.html` 原型提取目标架构、技术原则与稳定接口 |
 | v1.1 | 2026-10-20 | 模型适配层增加思考开关（默认关闭）：单次研究 245s → 70s，三角色默认 `qwen3.8-max`；报告收尾对引用 URL 做可达性复核（`link_status`） |
+| v1.3 | 2026-10-20 | 新增本地界面：`dra ui`（FastAPI + SSE，只绑 127.0.0.1）、后台任务管理与 HTTP 接口 |
 | v1.2 | 2026-10-20 | 面向"本地工具"重构配置与分发：`config.toml` + 用户数据目录 + BYOK + 任意 OpenAI 兼容端点 + 模型降级链；新增 `dra init` / `dra doctor` |
