@@ -156,3 +156,34 @@ def write_messages(
    不要把"本次检索未覆盖"写成"行业不存在/完全空白"。
 7. 不要写"本文将……"这类开头，直接进入内容。"""
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+def followup_messages(
+    topic: str,
+    report_excerpt: str,
+    sources: list[Source],
+    question: str,
+) -> list[dict[str, str]]:
+    """构造追问提示词：只给父研究的证据，引用沿用原编号。"""
+    system = "你是研究助手。只依据已有研究的证据回答追问，引用沿用原编号，不编造。"
+    evidence = []
+    for src in sources:
+        evidence.append(f"[{src.n}] {src.title} | {src.domain}")
+        evidence.append((src.snippet or "")[:900])
+        evidence.append("")
+    user = f"""原研究主题：{topic}
+
+原报告开头（用于理解上下文）：
+{report_excerpt[:1500]}
+
+可用证据（编号与原报告一致）：
+{chr(10).join(evidence)}
+
+追问：{question}
+
+要求：
+1. 中文，Markdown，300–800 字，直接回答问题，不要复述原报告。
+2. 只使用上面给出的证据；每个事实性论断用 [n] 标注，编号只能来自上面。
+3. 证据不足时明确写"现有证据无法回答……"，并说明还缺什么；不要编造数字或结论。
+4. 不要输出"参考资料"章节，不要输出 URL。"""
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
