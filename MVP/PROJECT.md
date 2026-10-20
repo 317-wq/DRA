@@ -1,6 +1,6 @@
 # PROJECT · 深度研究代理（Deep Research Agent）
 
-> 基线版本：v1.6
+> 基线版本：v1.7
 > 最后更新：2026-10-20
 > 说明：本文档只放跨版本稳定的内容（目标架构、技术原则、稳定接口）。
 > 版本范围、依赖与验收见对应的 `MVP-x.y.md`。
@@ -89,6 +89,8 @@
 - 知识库接口：`GET /api/kb`、`GET /api/kb/search`、`POST /api/kb/sink`、`DELETE /api/kb/{doc_id}`；沉淀与检索只调用 embedding。
 - 追问接口：`GET/POST /api/runs/{id}/followups`、`GET /api/runs/{id}/followups/{fid}`；CLI `dra ask`。
 - 追问存储：`runs/<parent>/followups/<id>/{answer.md, meta.json, trace.jsonl}`，父目录 `followups.json` 维护索引；引用沿用父报告编号。
+- 证据质量：来源带 `tier`（3 一手 / 2 专业媒体 / 1 一般 / 0 自媒体）与 `quality`（0–100）；
+  `GET /api/runs/{id}/eval` 与 `dra eval` 输出引用覆盖、数字可核验率、来源多样性，纯本地计算。
 - 安装与分发：以 `uv tool install` / GitHub Release 为主；安装后不依赖仓库目录，配置与数据都在用户目录。
 - 配置优先级：初始化参数 > 环境变量（`DRA_*`，兼容 `QWEN_*` / `TAVILY_*`）> 用户 `config.toml` > 项目 `.env` > 默认值。
 - 模型服务：任意 OpenAI 兼容端点；`model` 为主模型，`fallback_models` 为降级链，某个模型不可用时按序切换。
@@ -121,6 +123,7 @@
 |---|---|---|
 | v1.0 | 2026-10-20 | 初版：从架构图与 `5.html` 原型提取目标架构、技术原则与稳定接口 |
 | v1.1 | 2026-10-20 | 模型适配层增加思考开关（默认关闭）：单次研究 245s → 70s，三角色默认 `qwen3.8-max`；报告收尾对引用 URL 做可达性复核（`link_status`） |
+| v1.7 | 2026-10-21 | 新增证据质量：来源分级、引用/数字核验评估、基线；提示词标注来源等级 |
 | v1.6 | 2026-10-21 | 新增追问：基于父研究证据回答，复用原编号，默认不重新检索；CLI 与界面入口 |
 | v1.5 | 2026-10-21 | 知识库接入本地界面：文档列表、页面检索、报告一键沉淀与删除 |
 | v1.4 | 2026-10-21 | 新增本地知识库：报告切块入库、BM25 + 向量 + RRF 检索、`dra kb` 命令；检索式去重省额度 |
