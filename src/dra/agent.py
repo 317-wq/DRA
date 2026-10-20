@@ -168,10 +168,11 @@ class ResearchAgent:
         budget: Budget | None = None,
         max_sources: int = 12,
         on_event=None,
+        run: Run | None = None,
     ) -> RunResult:
         """执行一次完整研究并返回结果。"""
         budget = budget or Budget()
-        run = self.store.create(topic)
+        run = run or self.store.create(topic)
         bus = EventBus(run.id)
         trace = TraceWriter(run.trace_path)
         bus.subscribe(trace)
