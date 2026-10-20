@@ -13,7 +13,7 @@ from dra.web.server import create_app, find_free_port
 
 
 class FakeAgent:
-    def run(self, topic, *, budget=None, max_sources=12, on_event=None, run=None):
+    def run(self, topic, *, budget=None, max_sources=12, on_event=None, run=None, cancel_event=None):
         run.write_text("report.md", "# 测试报告\n\n结论[1]。\n")
         run.write_json("sources.json", [{"n": 1, "url": "https://example.com", "title": "示例"}])
         run.write_json(
