@@ -320,8 +320,11 @@ function renderPanel() {
       <span>${state.sourceList.length} 篇来源</span>
       <span>${meta.usage?.total_tokens || 0} token</span>
       <span>${meta.duration_s || 0}s</span>
+      <button id="sinkBtn" class="ghost-btn">沉淀到知识库</button>
     </div>`;
     panel.innerHTML = head + `<div class="report">${state.reportHtml}</div>`;
+    const sinkBtn = $("#sinkBtn");
+    if (sinkBtn) sinkBtn.onclick = sinkCurrent;
     return;
   }
 
@@ -427,6 +430,7 @@ async function start() {
 }
 
 function resetView() {
+  showView("research");
   closeStream();
   state.runId = null;
   state.subqs = [];
@@ -448,6 +452,99 @@ function resetView() {
   renderHistory();
 }
 
+/* ---------------- knowledge base ---------------- */
+function showView(name) {
+  document.querySelectorAll(".nav-item").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.view === name);
+  });
+  $("#view-research").hidden = name !== "research";
+  $("#view-kb").hidden = name !== "kb";
+  $("#viewTitle").textContent = name === "kb" ? "知识库" : "研究";
+  if (name === "kb") loadKb();
+}
+
+async function loadKb() {
+  const statsBox = $("#kbStats");
+  try {
+    const data = await api("/api/kb");
+    const stats = data.stats || {};
+    statsBox.textContent = `${stats.documents || 0} 篇 · ${stats.chunks || 0} 块 · ${stats.embedded || 0} 已向量化`;
+    const docs = data.documents || [];
+    const wrap = $("#kbDocs");
+    if (!docs.length) {
+      wrap.innerHTML = `<div class="empty">知识库是空的。先在报告页点“沉淀到知识库”。</div>`;
+      return;
+    }
+    wrap.innerHTML = docs.map((doc) => `<div class="kb-doc">
+        <div class="main"><b>${escapeHtml(doc.title)}</b>
+          <div class="m">${doc.chunk_count} 块 · ${doc.embedded} 已向量化 · ${escapeHtml(doc.run_id || "")}</div>
+        </div>
+        <button class="link-btn" data-doc="${doc.id}">删除</button>
+      </div>`).join("");
+    wrap.querySelectorAll("button[data-doc]").forEach((btn) => {
+      btn.onclick = async () => {
+        if (!confirm("从知识库删除这份文档？")) return;
+        try {
+          await api(`/api/kb/${btn.dataset.doc}`, { method: "DELETE" });
+          toast("已删除");
+          loadKb();
+        } catch (e) { toast(`删除失败：${e.message}`, true); }
+      };
+    });
+  } catch (e) {
+    statsBox.textContent = `读取知识库失败：${e.message}`;
+  }
+}
+
+async function searchKb() {
+  const query = $("#kbQuery").value.trim();
+  const box = $("#kbResults");
+  if (!query) return;
+  box.innerHTML = `<div class="empty">检索中…</div>`;
+  try {
+    const data = await api(`/api/kb/search?q=${encodeURIComponent(query)}&k=6`);
+    if (!data.hits || !data.hits.length) {
+      box.innerHTML = `<div class="empty">没有命中。</div>`;
+      return;
+    }
+    const mode = `mode=${data.mode} · 关键词 ${data.keyword_hits} · 向量 ${data.vector_hits}`;
+    box.innerHTML = `<div class="kb-stats">${mode}</div>` + data.hits.map((hit) => `<div class="kb-hit">
+        <div class="h"><b>${escapeHtml(hit.title)}</b><span>chunk ${hit.seq}</span>
+          <span class="score">${hit.score.toFixed(4)} (kw ${hit.keyword.toFixed(2)} / vec ${hit.vector.toFixed(2)})</span></div>
+        <div class="txt">${escapeHtml(hit.text.slice(0, 320))}</div>
+      </div>`).join("");
+  } catch (e) {
+    box.innerHTML = `<div class="empty">检索失败：${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function sinkCurrent() {
+  if (!state.runId) return;
+  const btn = $("#sinkBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "沉淀中…"; }
+  try {
+    const res = await api("/api/kb/sink", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run_id: state.runId }),
+    });
+    if (btn) btn.textContent = res.skipped ? "已在知识库" : `已沉淀 · ${res.chunks} 块`;
+    toast(res.skipped ? "这份报告已在知识库中" : `已沉淀 ${res.chunks} 块`);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = "沉淀到知识库"; }
+    toast(`沉淀失败：${e.message}`, true);
+  }
+}
+
+let toastTimer = null;
+function toast(message, isError = false) {
+  const node = $("#toast");
+  node.textContent = message;
+  node.className = `toast show${isError ? " error" : ""}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { node.className = "toast"; }, 2600);
+}
+
 /* ---------------- init ---------------- */
 function init() {
   const flow = document.querySelector(".flow");
@@ -460,6 +557,13 @@ function init() {
 
   $("#startBtn").onclick = start;
   $("#newBtn").onclick = resetView;
+  document.querySelectorAll(".nav-item").forEach((btn) => {
+    btn.onclick = () => showView(btn.dataset.view);
+  });
+  $("#kbSearchBtn").onclick = searchKb;
+  $("#kbQuery").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") searchKb();
+  });
   $("#topic").addEventListener("keydown", (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") start();
   });
