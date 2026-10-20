@@ -2,44 +2,103 @@
 
 输入一个研究主题，Agent 自己拆题、检索、读正文、判断证据够不够、补检索，最后写一份**每个结论都能溯源到 URL** 的 Markdown 报告。
 
-当前版本：**MVP 0.1（CLI）**。范围与验收见 [MVP/MVP-0.1.md](MVP/MVP-0.1.md)，目标架构见 [MVP/PROJECT.md](MVP/PROJECT.md)，路线图见 [MVP/ROADMAP.md](MVP/ROADMAP.md)。
+它是一个**本地工具**：数据在你自己电脑上，不需要注册登录，也不需要有人维护服务器。你只需要准备两个 API Key（模型 + 搜索）。
 
-## 实测（2026-10-20，8 核 / 3GB 单机）
+当前版本：**0.2.0**。
+- 目标架构与接口：`MVP/PROJECT.md`（v1.2）
+- 本版范围与验收：`MVP/MVP-0.2.md`
+- 后续路线：`MVP/ROADMAP.md`
 
-| 主题 | 耗时 | 来源 | 正文 | 结果 |
-|---|---|---|---|---|
-| 2026 年主流 Agent 记忆机制方案对比 | 71.0s | 6 篇 | 2002 字 | partial（多数子问题证据只到 partial） |
-| 2026 年 RAG 与长上下文方案的选择边界 | 68.8s | 8 篇 | 1830 字 | partial（1 个子问题 enough） |
-| 2026 年中国新能源汽车换电模式的现状与争议 | 72.9s | 7 篇 | 2596 字 | partial |
+## 安装（使用者）
 
-三轮合计约 9k–12k token/次（无 reasoning token）。`partial` 不是失败：它表示有子问题没拿到足够证据，报告里会明确写出缺口。
+需要 Python 3.12+ 和 [uv](https://docs.astral.sh/uv/)。uv 会顺手装好 Python，不用单独配环境。
 
-## 快速开始
+macOS / Linux：
 
 ```bash
-cd ~/ljt/DRA
+curl -LsSf https://astral.sh/uv/install.sh | sh
+uv tool install git+https://github.com/<你的用户名>/dra.git
 
-# 依赖（uv 不在 PATH 里，用绝对路径）
-~/.local/bin/uv sync
-
-# 配置：复制后填 key
-cp .env.example .env
-
-# 跑一个主题
-~/.local/bin/uv run dra run "2026 年主流 Agent 记忆机制方案对比" --max-sources 8
-
-# 看报告 / 看完整轨迹
-~/.local/bin/uv run dra show <run_id>
-~/.local/bin/uv run dra show <run_id> --trace
-
-# 历史
-~/.local/bin/uv run dra list
-
-# 三个主题一键演示
-./scripts/demo.sh
+dra init      # 选服务商、填两个 Key
+dra doctor    # 检查 Key、端点、检索是否真的能用
+dra run "2026 年主流 Agent 记忆机制方案对比"
 ```
 
-也可以 `source .venv/bin/activate` 后直接用 `dra`。
+Windows（PowerShell）：
+
+```powershell
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+uv tool install git+https://github.com/<你的用户名>/dra.git
+
+dra init
+dra doctor
+dra run "2026 年主流 Agent 记忆机制方案对比"
+```
+
+> 如果提示 `dra` 找不到，把 `~/.local/bin`（Windows 是 `%USERPROFILE%\.local\bin`）加进 PATH，
+> 或执行 `uv tool update-shell` 后重开终端。
+
+升级：
+
+```bash
+uv tool upgrade dra
+```
+
+## 从源码运行（开发者）
+
+```bash
+git clone <仓库地址> && cd dra
+uv sync
+uv run dra init
+uv run dra doctor
+uv run dra run "2026 年 RAG 与长上下文方案的选择边界"
+```
+
+`uv run dra ...` 与安装后的 `dra ...` 等价。
+
+## 配置
+
+`dra init` 会写到系统配置目录，密钥权限 0600：
+
+| 平台 | 配置 | 运行数据 |
+|---|---|---|
+| Linux | `~/.config/dra/config.toml` | `~/.local/share/dra/runs/` |
+| macOS | `~/Library/Application Support/dra/config.toml` | `~/Library/Application Support/dra/runs/` |
+| Windows | `%APPDATA%\dra\config.toml` | `%LOCALAPPDATA%\dra\runs\` |
+
+优先级：**命令行参数 > 环境变量 > `config.toml` > 项目 `.env` > 默认值**。
+所以临时换 Key 不用改文件：
+
+```bash
+DRA_API_KEY=sk-xxx dra doctor
+```
+
+`config.toml` 示例（`dra init` 生成的就是这些键）：
+
+```toml
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+api_key = "sk-..."
+model = "qwen3.8-max"
+fallback_models = ["deepseek-v4.1-flash"]
+embedding_model = "qwen3.7-text-embedding-flash"
+tavily_api_key = "tvly-..."
+runs_dir = "/home/you/.local/share/dra/runs"
+```
+
+- **BYOK**：模型和搜索都由用户自己的 Key 付费，项目不代管额度。
+- **换供应商**：只要兼容 OpenAI 接口，改 `base_url` / `model` / `api_key` 即可（DeepSeek、OpenAI、自建代理、Ollama 都行）。
+- **降级链**：`fallback_models` 里的模型会在主模型不可用（额度耗尽 / 不存在 / 429）时按序接管。
+
+## 命令
+
+| 命令 | 作用 |
+|---|---|
+| `dra init` | 生成/更新配置（`--yes` 非交互，`--force` 覆盖） |
+| `dra doctor` | 8 项自检：配置、密钥、端点、对话、向量、检索、数据目录 |
+| `dra run "<主题>"` | 发起研究；`--max-sources` / `--max-seconds` / `--max-tool-calls` / `--max-rounds` 控预算 |
+| `dra show <run_id>` | 看报告；`--trace` 看完整事件时间线 |
+| `dra list` | 列出历史研究 |
+| `dra version` | 版本号 |
 
 ## 一次研究发生了什么
 
@@ -48,75 +107,73 @@ cp .env.example .env
  ├─ Plan      拆成 3–5 个可独立检索的子问题（每个带检索式）
  ├─ Search    Tavily 并发检索（并发 4），URL 归一化去重
  ├─ Read      Tavily Extract 批量取正文；失败降级原始抓取
- ├─ Analyze   证据 → 要点 + 引用编号 + 覆盖度（enough/partial/gap）
+ ├─ Analyze   证据 → 要点 + 引用编号 + 覆盖度（enough / partial / gap）
  ├─ Replan    有 gap 且预算未尽 → 补 1–2 条检索式，再来一轮
  └─ Write     分节写报告，引用编号由程序注入并重排
 ```
 
 终止条件：所有子问题 `enough`，或预算（工具调用 / 墙钟时间 / token / 轮次）用尽。
-补充检索没拿到新来源时会提前收敛，不再空跑一轮分析。
+补充检索没拿到新来源会提前收敛，不再空跑一轮分析。
 
 ## 产物
 
 ```
-runs/<run_id>/
+<runs_dir>/<run_id>/
   run.json          # 元数据、覆盖度、预算、token、提示
   report.md         # 报告（含参考资料，URL 由程序生成）
   sources.json      # 实际引用的来源，n 与 [n] 对齐，含 link_status 复核结果
   subquestions.json # 拆题与每轮覆盖度
-  trace.jsonl       # 事件流：可直接喂给 0.2 的 SSE
+  trace.jsonl       # 事件流：可直接喂给 0.3 的本地 UI
   sources/001.md    # 每篇来源的正文快照（排查用）
   debug/            # 仅在分析输出解析失败时出现，存原始返回
 ```
 
-## 配置
+## 实测（2026-10-20，8 核 / 3GB 单机）
 
-`.env` 里的 `QWEN_*` / `TAVILY_*` 直接复用。角色模型可覆盖：
+| 主题 | 耗时 | 来源 | 正文 | 结果 |
+|---|---|---|---|---|
+| 2026 年主流 Agent 记忆机制方案对比 | 71.0s | 6 | 2002 字 | partial |
+| 2026 年 RAG 与长上下文方案的选择边界 | 68.8s | 8 | 1830 字 | partial（1 个子问题 enough） |
+| 2026 年中国新能源汽车换电模式的现状与争议 | 72.9s | 7 | 2596 字 | partial |
+| 2026 年向量数据库的选型边界 | 79.8s | 5 | 8 节 | partial |
+| MCP 协议核心概念与生态 | 73.0s | 3 | — | 配置驱动运行 |
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `DRA_PLANNER_MODEL` | `qwen3.8-max` | 拆题 + 补检索 |
-| `DRA_ANALYST_MODEL` | `qwen3.8-max` | 证据分析 |
-| `DRA_WRITER_MODEL` | `qwen3.8-max` | 写报告（也可 `--writer` 临时覆盖） |
-| `DRA_DISABLE_THINKING` | `true` | 对 Qwen 模型关闭思考模式（关键，见下） |
-| `DRA_RUNS_DIR` | `./runs` | 产物目录 |
-| `DRA_REQUEST_TIMEOUT_S` | `180` | 单次模型调用超时 |
+单次 9k–12k token。`partial` 不是失败：它表示有子问题没拿到足够证据，报告里会明确写出缺口。
 
-### 模型实测记录（这些数字决定了默认值）
+### 模型实测记录（决定默认值的就是这些数字）
 
 | 配置 | 结果 |
 |---|---|
 | `qwen3.8-max` + 关闭 thinking | 拆题 5.7s、写 2600 字约 60s，JSON 稳定 ✅ 默认 |
 | `qwen3.8-max` + 开启 thinking | 写 2600 字 171s（其中 4995 token 是推理），一次研究 245s |
 | `qwen3.8-flash` | 能写对，但同样爱推理：一次分析 102s / 4628 reasoning token |
-| `deepseek-v4.1-flash` | 快，但 50% 概率把 4000+ token 花在推理上，JSON 被截断；作写作模型单次 5368 reasoning/6000 上限，报告写一半 |
+| `deepseek-v4.1-flash` | 快，但约 50% 概率把 4000+ token 花在推理上，JSON 被截断；作写作模型会把报告写一半 |
 | `kimi-k3` | 不接受 `response_format`（HTTP 400） |
 | `glm-5.3` / `deepseek-v4-pro-0813` | JSON 模式下 reasoning 吃掉输出额度，容易截断 |
 
-结论：**结构化任务和写作都用 qwen3.8-max，并关闭 thinking**。收益不是一点——单次研究从 245s 降到 70s，且没有截断。
-
-## 设计取舍（0.1）
+## 设计取舍
 
 - **不用 LangGraph**：单线程显式循环 + 预算检查就够，调试成本低。
 - **引用只由程序注入**：模型写 `[n]`，程序校验编号、按首次出现重排、生成参考资料。模型编的 URL 进不了报告。
 - **证据先行**：先登记来源再分析，分析阶段只能看已登记证据。
 - **分析失败不拖垮研究**：截断会加大额度重试一次；仍失败就降级为 gap，报告继续由证据清单驱动。
 - **引用收尾复核**：写完后并发检查引用 URL，状态写进 `sources.json`；403/超时只提示，不改写报告。
-- **不追求"全知"**：覆盖度不到就写"证据不足"，比编一段像样的假话有价值。
+- **本地优先**：配置与数据都在用户目录，未来加 UI 也只在 127.0.0.1 起服务。
 
 ## 测试
 
 ```bash
-~/.local/bin/uv run pytest                      # 37 个单测（离线，约 2s）
-DRA_LIVE=1 ~/.local/bin/uv run pytest -m live   # 真实链路 smoke（会花钱）
+uv run pytest                          # 47 个离线单测，约 2s
+DRA_LIVE=1 uv run pytest -m live       # 真实链路 smoke（会花钱）
 ```
+
+CI 在 `.github/workflows/ci.yml`，覆盖 ubuntu / windows / macOS。
 
 ## 已知限制
 
 - 中文源覆盖受 Tavily 影响；未实测是否需要补 Bing / Brave。
 - 分析阶段每个子问题最多看 5 篇、每篇 800 字摘录，长文会被截断——这是 `partial` 偏多的主要原因。
-- 报告 1800–2600 字，来自提示词里的硬约束；要更长需要分节写作（0.2 再做）。
-- 事件 schema 已按 SSE 直出的形态设计，但尚未被真实消费者验证。
+- 报告 1800–2600 字，来自提示词里的硬约束；要更长需要分节写作。
+- 密钥以明文存本机（0600），尚未接系统 keyring。
 - 部分站点（YouTube / Wikipedia）抓取成功但服务器直连不可达，`link_status` 会标 `unreachable`。
-- 无 Web、无知识库、无追问——见 ROADMAP 0.2–0.4。
-# DRA
+- 暂无本地 UI、知识库、追问——见 ROADMAP 0.3–0.5。
