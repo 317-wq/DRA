@@ -32,6 +32,13 @@ app = typer.Typer(
     rich_markup_mode="rich",
     help="Deep Research Agent —— 输入主题，产出带引用的研究报告。",
 )
+# Windows 的 GBK 控制台或管道无法编码 ✓ 等字符：降级为替换，避免直接崩溃
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(errors="replace")  # type: ignore[attr-defined]
+    except (AttributeError, ValueError):
+        pass
+
 console = Console()
 
 COVERAGE_ICON = {"enough": "●", "partial": "◐", "gap": "○", None: "·"}
