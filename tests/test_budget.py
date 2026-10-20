@@ -23,8 +23,15 @@ def test_time_limit():
     b = Budget(max_seconds=0.001)
     import time
 
-    time.sleep(0.01)
-    assert "耗时" in (b.exhausted_reason() or "")
+    # Windows 的 sleep 粒度不稳定，轮询等待触顶而不是赌一次 sleep
+    deadline = time.monotonic() + 1.0
+    reason = None
+    while time.monotonic() < deadline:
+        reason = b.exhausted_reason()
+        if reason:
+            break
+        time.sleep(0.01)
+    assert "耗时" in (reason or "")
 
 
 def test_rounds_do_not_block_mid_run():
