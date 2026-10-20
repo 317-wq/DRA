@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import time
 from collections import deque
@@ -356,6 +357,189 @@ def ui(
     from dra.web.server import serve
 
     serve(Settings(), port=port, open_browser=not no_browser)
+
+
+kb_app = typer.Typer(help="本地知识库：导入报告、关键词 + 向量混合检索。", no_args_is_help=True)
+app.add_typer(kb_app, name="kb")
+
+
+def _open_kb(settings: Settings):
+    from dra.kb import KnowledgeBase
+    from dra.llm import ModelAdapter
+
+    return KnowledgeBase(settings, adapter=ModelAdapter(settings))
+
+
+@kb_app.command("add")
+def kb_add(run_id: str = typer.Argument("", help="run id；留空取最近一次")) -> None:
+    """把一次研究的报告导入知识库（需要 embedding，成本很低）。"""
+    settings = Settings()
+    settings.require_llm()
+    store = RunStore(settings.runs_dir)
+    if not run_id:
+        runs = store.list()
+        if not runs:
+            console.print("[red]还没有研究记录[/red]")
+            raise typer.Exit(code=1)
+        run_id = runs[0]["run_id"]
+    try:
+        run = store.open(run_id)
+    except FileNotFoundError:
+        console.print(f"[red]找不到 run：{run_id}[/red]")
+        raise typer.Exit(code=1) from None
+    report = run.dir / "report.md"
+    if not report.exists():
+        console.print("[red]这次运行没有报告，无法导入[/red]")
+        raise typer.Exit(code=1)
+    meta_path = run.dir / "run.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+    kb = _open_kb(settings)
+    try:
+        doc_id, chunks = kb.add_report(
+            run_id=run_id,
+            title=meta.get("topic", run_id),
+            text=report.read_text(encoding="utf-8"),
+            source_path=str(report),
+        )
+    finally:
+        kb.close()
+    if chunks == 0:
+        console.print(f"[yellow]内容已在知识库中（doc {doc_id}），未重复导入[/yellow]")
+    else:
+        console.print(f"[green]已导入[/green] doc {doc_id} · {chunks} 块")
+
+
+@kb_app.command("import")
+def kb_import(limit: int = typer.Option(0, "--limit", help="最多导入多少个 run；0 表示全部")) -> None:
+    """批量导入历史研究（已导入的会按内容哈希跳过）。"""
+    settings = Settings()
+    settings.require_llm()
+    store = RunStore(settings.runs_dir)
+    runs = store.list()
+    if limit > 0:
+        runs = runs[:limit]
+    if not runs:
+        console.print("[dim]没有可导入的研究[/dim]")
+        return
+    kb = _open_kb(settings)
+    added = skipped = failed = 0
+    try:
+        for meta in runs:
+            run_id = meta.get("run_id", "")
+            try:
+                run = store.open(run_id)
+                report = run.dir / "report.md"
+                if not report.exists():
+                    failed += 1
+                    continue
+                _, chunks = kb.add_report(
+                    run_id=run_id,
+                    title=meta.get("topic", run_id),
+                    text=report.read_text(encoding="utf-8"),
+                    source_path=str(report),
+                )
+                if chunks:
+                    added += 1
+                else:
+                    skipped += 1
+            except Exception:
+                failed += 1
+    finally:
+        kb.close()
+    console.print(f"导入 {added} · 跳过 {skipped} · 失败 {failed}")
+
+
+@kb_app.command("list")
+def kb_list() -> None:
+    """列出知识库里的文档。"""
+    settings = Settings()
+    kb = _open_kb(settings)
+    try:
+        docs = kb.list_documents()
+    finally:
+        kb.close()
+    if not docs:
+        console.print("[dim]知识库是空的。先用 dra kb add 或 dra kb import 导入报告。[/dim]")
+        return
+    table = Table(box=None, pad_edge=False)
+    table.add_column("id", justify="right", width=4)
+    table.add_column("标题", overflow="ellipsis", max_width=48)
+    table.add_column("块数", justify="right")
+    table.add_column("已向量化", justify="right")
+    table.add_column("来源 run", style="dim")
+    for doc in docs:
+        table.add_row(
+            str(doc["id"]),
+            doc["title"],
+            str(doc["chunk_count"]),
+            str(doc["embedded"]),
+            doc.get("run_id") or "-",
+        )
+    console.print(table)
+
+
+@kb_app.command("search")
+def kb_search(
+    query: str = typer.Argument(..., help="检索词"),
+    k: int = typer.Option(6, "--k", help="返回多少块"),
+) -> None:
+    """BM25 + 向量混合检索，RRF 融合排序。"""
+    settings = Settings()
+    kb = _open_kb(settings)
+    try:
+        hits, info = kb.search(query, k=k)
+    finally:
+        kb.close()
+    if not hits:
+        console.print(f"[dim]没有命中（mode={info.get('mode')}）。[/dim]")
+        return
+    console.print(
+        f"[dim]mode={info.get('mode')} · 关键词命中 {info.get('keyword_hits')} · "
+        f"向量命中 {info.get('vector_hits')}[/dim]"
+    )
+    for index, hit in enumerate(hits, start=1):
+        snippet = re.sub(r"\s+", " ", hit.text)[:180]
+        console.print(
+            f"\n[bold]{index}. {hit.title}[/bold] [dim]· chunk {hit.seq} · "
+            f"score {hit.score:.4f} (kw {hit.keyword:.2f} / vec {hit.vector:.2f})[/dim]"
+        )
+        console.print(f"   {snippet}")
+
+
+@kb_app.command("show")
+def kb_show(doc_id: int = typer.Argument(..., help="文档 id")) -> None:
+    """查看一份文档的分块。"""
+    settings = Settings()
+    kb = _open_kb(settings)
+    try:
+        doc = kb.get_document(doc_id)
+    finally:
+        kb.close()
+    if not doc:
+        console.print(f"[red]找不到文档 {doc_id}[/red]")
+        raise typer.Exit(code=1)
+    console.print(f"[bold]{doc['title']}[/bold]  [dim]{doc.get('source_path') or ''}[/dim]")
+    console.print(f"[dim]{len(doc['chunks'])} 块[/dim]")
+    for chunk in doc["chunks"]:
+        console.print(f"\n[cyan]#{chunk['seq']}[/cyan] [dim]{chunk['chars']} 字[/dim]")
+        console.print(chunk["text"][:400])
+
+
+@kb_app.command("remove")
+def kb_remove(
+    doc_id: int = typer.Argument(..., help="文档 id"),
+    yes: bool = typer.Option(False, "--yes"),
+) -> None:
+    """从知识库删除一份文档。"""
+    if not yes and not typer.confirm(f"确认删除文档 {doc_id}？", default=False):
+        raise typer.Exit(code=1)
+    settings = Settings()
+    kb = _open_kb(settings)
+    try:
+        ok = kb.remove(doc_id)
+    finally:
+        kb.close()
+    console.print("[green]已删除[/green]" if ok else "[yellow]没有找到该文档[/yellow]")
 
 
 @app.command()
