@@ -11,7 +11,7 @@ import httpx
 from dra.config import Settings
 from dra.tools.url_utils import PolicyError, assert_safe_url
 
-MAX_CONTENT_CHARS = 40_000
+MAX_CONTENT_CHARS = 60_000
 MAX_HTML_BYTES = 2_000_000
 SKIP_TAGS = {"script", "style", "noscript", "svg", "iframe", "head", "nav", "footer"}
 
