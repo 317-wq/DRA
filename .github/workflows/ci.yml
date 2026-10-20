@@ -21,6 +21,14 @@ jobs:
       - name: 代码检查
         run: uv run ruff check src tests
       - name: 单元测试
-        run: uv run pytest -q
+        shell: bash
+        run: |
+          set +e
+          uv run pytest -q --junitxml=report.xml
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            uv run python scripts/ci_report.py
+          fi
+          exit "$code"
       - name: 构建检查
         run: uv build
