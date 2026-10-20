@@ -15,10 +15,17 @@ from typing import Any
 from dra.budget import Budget, BudgetExceeded
 from dra.citations import count_chinese_chars, finalize_report, strip_urls_for_check
 from dra.config import Settings
+from dra.evaluate import evaluate_report
 from dra.jsonutil import JSONParseError, extract_json
 from dra.llm import LLMError, ModelAdapter
 from dra.models import ChatUsage, RunResult, Source, SubQuestion
-from dra.prompts import analyze_messages, plan_messages, replan_messages, write_messages
+from dra.prompts import (
+    analyze_messages,
+    plan_messages,
+    repair_messages,
+    replan_messages,
+    write_messages,
+)
 from dra.quality import assess_source
 from dra.store import Run, RunStore
 from dra.tools import Reader, SearchHit, TavilySearch, ToolError, canonicalize, domain_of
@@ -655,8 +662,59 @@ class ResearchAgent:
             stage="write",
         )
 
-        body = res.text.strip()
-        body, cited, dropped = finalize_report(body, ctx.sources)
+        draft = res.text.strip()
+        threshold = self.settings.min_number_support
+        support = evaluate_report(
+            run_id="draft", topic=ctx.topic, sources=ctx.sources, report_text=draft
+        )["numbers"]
+        repaired = False
+        if threshold > 0 and support["total"] >= 3 and support["support_rate"] < threshold:
+            ctx.bus.emit(
+                "write.verify",
+                "write",
+                {
+                    "support_rate": support["support_rate"],
+                    "unverified": len(support["unverified"]),
+                    "action": "repair",
+                },
+            )
+            repair = self._chat(
+                ctx,
+                repair_messages(ctx.topic, draft, support["unverified"], ctx.sources),
+                model=self.settings.write_model_resolved,
+                max_tokens=6000,
+                temperature=0.2,
+                stage="repair",
+            )
+            candidate = repair.text.strip()
+            new_support = evaluate_report(
+                run_id="draft", topic=ctx.topic, sources=ctx.sources, report_text=candidate
+            )["numbers"]
+            old_citations = len(re.findall(r"\[\d", draft))
+            new_citations = len(re.findall(r"\[\d", candidate))
+            accepted = (
+                new_support["support_rate"] > support["support_rate"] + 0.05
+                and new_citations >= max(1, int(old_citations * 0.6))
+                and len(candidate) >= len(draft) * 0.6
+            )
+            ctx.bus.emit(
+                "write.verify",
+                "write",
+                {
+                    "support_rate": new_support["support_rate"],
+                    "action": "accepted" if accepted else "rejected",
+                    "citations_before": old_citations,
+                    "citations_after": new_citations,
+                },
+            )
+            if accepted:
+                draft = candidate
+                support = new_support
+                repaired = True
+            else:
+                ctx.notes.append("数字校对未通过验收（引用或长度损失过大），保留原稿")
+
+        body, cited, dropped = finalize_report(draft, ctx.sources)
 
         # 引用复核：只影响 sources.json 的 link_status 与提示，不改报告
         statuses = check_urls([s.url for s in cited]) if self.verify_links else {}
@@ -678,6 +736,29 @@ class ResearchAgent:
             f"来源：{len(cited)} 篇 ｜ 模型：{res.model}\n\n"
         )
         report = header + body
+
+        eval_result = evaluate_report(
+            run_id=ctx.run.id, topic=ctx.topic, sources=cited, report_text=report
+        )
+        ctx.run.write_json("eval.json", eval_result)
+        ctx.bus.emit(
+            "write.verified",
+            "write",
+            {
+                "score": eval_result["score"],
+                "grade": eval_result["grade"],
+                "support_rate": eval_result["numbers"]["support_rate"],
+                "repaired": repaired,
+            },
+        )
+        if (
+            eval_result["numbers"]["total"]
+            and eval_result["numbers"]["support_rate"] < threshold
+        ):
+            ctx.notes.append(
+                f"数字可核验率 {eval_result['numbers']['support_rate']:.0%}，"
+                f"仍低于阈值 {threshold:.0%}"
+            )
 
         chars = count_chinese_chars(report)
         if chars < 800:
