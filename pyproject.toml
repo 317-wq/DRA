@@ -1,6 +1,6 @@
 [project]
 name = "dra-research"
-version = "1.1.0"
+version = "1.2.0"
 description = "Deep Research Agent — 本地运行的研究报告生成工具（BYOK）"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -33,6 +33,7 @@ dependencies = [
 
 [project.scripts]
 dra = "dra.cli:app"
+dra-desktop = "dra.desktop:main"
 
 [project.urls]
 Homepage = "https://github.com/317-wq/DRA"
