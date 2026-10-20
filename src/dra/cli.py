@@ -359,6 +359,39 @@ def ui(
     serve(Settings(), port=port, open_browser=not no_browser)
 
 
+@app.command()
+def ask(
+    question: str = typer.Argument(..., help="追问内容"),
+    run_id: str = typer.Option("", "--run", "-r", help="父研究 run id；留空取最近一次"),
+    k: int = typer.Option(6, "--k", help="从父研究里选多少篇证据"),
+) -> None:
+    """基于某次研究追问；默认复用父 run 证据，不重新检索、不消耗搜索额度。"""
+    settings = Settings()
+    settings.require_llm()
+    store = RunStore(settings.runs_dir)
+    if not run_id:
+        runs = [item for item in store.list() if item.get("status") != "running"]
+        if not runs:
+            console.print("[red]还没有可追问的研究[/red]")
+            raise typer.Exit(code=1)
+        run_id = runs[0]["run_id"]
+
+    from dra.followup import FollowupEngine
+
+    engine = FollowupEngine(settings, store)
+    try:
+        if console.is_terminal:
+            with console.status("基于已有证据回答…"):
+                result = engine.ask(run_id, question, k=k)
+        else:
+            result = engine.ask(run_id, question, k=k)
+    except (ValueError, FileNotFoundError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from None
+    console.print(Markdown(result.answer))
+    console.print(f"\n[dim]已保存：{result.path}（{result.duration_s}s）[/dim]")
+
+
 kb_app = typer.Typer(help="本地知识库：导入报告、关键词 + 向量混合检索。", no_args_is_help=True)
 app.add_typer(kb_app, name="kb")
 
