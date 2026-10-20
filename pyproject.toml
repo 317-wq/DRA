@@ -1,8 +1,22 @@
 [project]
 name = "dra"
-version = "0.8.0"
+version = "1.0.0"
 description = "Deep Research Agent — 本地运行的研究报告生成工具（BYOK）"
 readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "317-wq" }]
+keywords = ["agent", "deep-research", "llm", "rag", "report", "local-first"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Text Processing :: Markup :: Markdown",
+]
 requires-python = ">=3.12"
 dependencies = [
     "openai>=1.60.0",
@@ -18,6 +32,12 @@ dependencies = [
 
 [project.scripts]
 dra = "dra.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/317-wq/DRA"
+Repository = "https://github.com/317-wq/DRA"
+Issues = "https://github.com/317-wq/DRA/issues"
+Changelog = "https://github.com/317-wq/DRA/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = [
