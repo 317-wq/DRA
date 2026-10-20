@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -33,6 +34,10 @@ from dra.trace import EventBus, TraceWriter, now_iso
 from dra.verify import check_urls, is_ok
 
 SNIPPET_CHARS = 1200
+
+
+class RunCancelled(RuntimeError):
+    """用户取消：在工具/模型边界抛出，保留已完成产物。"""
 PER_QUESTION_SOURCES = 3
 SEARCH_RESULTS = 10
 
@@ -97,6 +102,7 @@ class RunContext:
     sources: list[Source] = field(default_factory=list)
     usage: ChatUsage = field(default_factory=ChatUsage)
     notes: list[str] = field(default_factory=list)
+    cancel_event: threading.Event | None = None
     searched_queries: set[str] = field(default_factory=set)
     _by_url: dict[str, Source] = field(default_factory=dict)
 
@@ -182,6 +188,7 @@ class ResearchAgent:
         max_sources: int = 12,
         on_event=None,
         run: Run | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> RunResult:
         """执行一次完整研究并返回结果。"""
         budget = budget or Budget()
@@ -198,6 +205,7 @@ class ResearchAgent:
             budget=budget,
             bus=bus,
             max_sources=max_sources,
+            cancel_event=cancel_event,
         )
         started_wall = datetime.now()
         status = "failed"
@@ -236,6 +244,7 @@ class ResearchAgent:
             )
 
             for round_no in range(1, budget.max_rounds + 1):
+                self._check_cancel(ctx)
                 if round_no > 1 and all(sq.coverage == "enough" for sq in subquestions):
                     break
                 budget.check()
@@ -258,6 +267,9 @@ class ResearchAgent:
             status = "done" if all(sq.coverage == "enough" for sq in subquestions) else "partial"
             if dropped:
                 ctx.notes.append(f"丢弃 {dropped} 处指向不存在来源的引用")
+        except RunCancelled:
+            ctx.notes.append("用户取消了这次研究")
+            status = "cancelled"
         except BudgetExceeded as exc:
             ctx.notes.append(f"预算中止：{exc.reason}")
             status = "partial"
@@ -291,7 +303,7 @@ class ResearchAgent:
         )
         run.write_json("run.json", result.model_dump())
         bus.emit(
-            "run.finished" if status != "failed" else "run.failed",
+            "run.failed" if status == "failed" else "run.finished",
             "done",
             {
                 "status": status,
@@ -773,6 +785,10 @@ class ResearchAgent:
         return report, cited, dropped
 
     # ------------------------------------------------------------- plumbing
+    def _check_cancel(self, ctx: RunContext) -> None:
+        if ctx.cancel_event is not None and ctx.cancel_event.is_set():
+            raise RunCancelled("用户取消")
+
     def _chat(
         self,
         ctx: RunContext,
@@ -785,6 +801,7 @@ class ResearchAgent:
         stage: str = "",
     ):
         """统一的模型调用入口：预算检查、用量累计、事件上报。"""
+        self._check_cancel(ctx)
         ctx.budget.check()
         res = self.llm.chat(
             messages,
@@ -795,6 +812,7 @@ class ResearchAgent:
         )
         ctx.usage.merge(res.usage)
         ctx.budget.spend_tokens(res.usage.total_tokens)
+        self._check_cancel(ctx)
         if stage:
             ctx.bus.emit(
                 f"{stage}.llm",
