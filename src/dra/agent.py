@@ -35,6 +35,13 @@ def clean_text(text: str, limit: int = SNIPPET_CHARS) -> str:
     return text[:limit]
 
 
+def per_question_quota(remaining: int, targets_left: int, cap: int = PER_QUESTION_SOURCES) -> int:
+    """把剩余来源名额均分给还没处理的子问题，避免前面的子问题吃光预算。"""
+    if remaining <= 0 or targets_left <= 0:
+        return 0
+    return min(cap, max(1, remaining // targets_left))
+
+
 @dataclass
 class RunContext:
     run: Run
@@ -322,11 +329,16 @@ class ResearchAgent:
         picked: list[tuple[SubQuestion, SearchHit, str]] = []
         seen: set[str] = set()
         remaining = ctx.remaining_sources()
-        for sq in targets:
+        starved: list[int] = []
+        for index, sq in enumerate(targets):
+            quota = per_question_quota(remaining, len(targets) - index)
+            if quota <= 0:
+                starved.append(sq.id)
+                continue
             bucket = sorted(per_sq.get(sq.id, {}).values(), key=lambda x: x[0].score, reverse=True)
             taken = 0
             for hit, query in bucket:
-                if remaining <= 0 or taken >= PER_QUESTION_SOURCES:
+                if remaining <= 0 or taken >= quota:
                     break
                 canon = canonicalize(hit.url)
                 if not canon or canon in seen:
@@ -365,6 +377,13 @@ class ResearchAgent:
             )
             if src is not None:
                 added.setdefault(sq.id, []).append(src.n)
+
+        if starved:
+            ctx.notes.append(
+                "来源预算不足，子问题 "
+                + "、".join(str(i) for i in starved)
+                + " 未分配来源；可提高 --max-sources"
+            )
 
         for sq in targets:
             ns = added.get(sq.id, [])
