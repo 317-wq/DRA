@@ -98,6 +98,14 @@ def test_ask_requires_report(tmp_path):
         engine.ask(parent, "还能问吗？")
 
 
+def test_strips_model_heading(tmp_path):
+    settings, store, parent = seed(tmp_path)
+    engine = FollowupEngine(settings, store, llm=FakeLLM("# 模型自拟标题\n\n结论[2]。"))
+    result = engine.ask(parent, "beta 是什么？")
+    assert "模型自拟标题" not in result.answer
+    assert "结论[2]" in result.answer
+
+
 def test_list_empty(tmp_path):
     settings, store, parent = seed(tmp_path)
     engine = FollowupEngine(settings, store, llm=FakeLLM())
