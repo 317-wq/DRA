@@ -107,7 +107,7 @@ runs/<run_id>/
 ## 测试
 
 ```bash
-~/.local/bin/uv run pytest                      # 34 个单测（离线，约 2s）
+~/.local/bin/uv run pytest                      # 37 个单测（离线，约 2s）
 DRA_LIVE=1 ~/.local/bin/uv run pytest -m live   # 真实链路 smoke（会花钱）
 ```
 
