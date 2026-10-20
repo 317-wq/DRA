@@ -18,6 +18,7 @@ const state = {
   sourceList: [],
   trace: [],
   meta: null,
+  followups: [],
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -267,14 +268,16 @@ async function loadRun(runId, options = {}) {
   closeStream();
   state.runId = runId;
   state.coverage = {};
-  const [meta, sources, trace] = await Promise.all([
+  const [meta, sources, trace, followups] = await Promise.all([
     api(`/api/runs/${runId}`),
     api(`/api/runs/${runId}/sources`).catch(() => []),
     api(`/api/runs/${runId}/trace`).catch(() => []),
+    api(`/api/runs/${runId}/followups`).catch(() => ({ items: [] })),
   ]);
   state.meta = meta;
   state.sourceList = sources;
   state.trace = trace;
+  state.followups = followups.items || [];
   state.sources = sources.length;
   state.reportHtml = "";
   $("#viewTitle").textContent = meta.topic || "研究";
@@ -347,6 +350,11 @@ function renderPanel() {
     return;
   }
 
+  if (state.tab === "followups") {
+    renderFollowups();
+    return;
+  }
+
   if (state.tab === "trace") {
     if (!state.trace.length) {
       panel.innerHTML = `<div class="empty">还没有轨迹。</div>`;
@@ -363,6 +371,81 @@ function renderPanel() {
       <thead><tr><th>#</th><th>阶段</th><th>事件</th><th>详情</th><th>耗时</th></tr></thead>
       <tbody>${rows}</tbody></table>`;
   }
+}
+
+/* ---------------- follow-ups ---------------- */
+function renderFollowups() {
+  const panel = $("#panel");
+  if (!state.runId) {
+    panel.innerHTML = `<div class="empty">先打开一次研究，再基于它追问。</div>`;
+    return;
+  }
+  const running = state.meta?.status === "running";
+  panel.innerHTML = `
+    <div class="qa-box">
+      <input id="qaInput" placeholder="基于这份报告追问，例如：那成本呢？" ${running ? "disabled" : ""}>
+      <div class="qa-row">
+        <span class="hint">只复用这份报告的证据，不重新检索</span>
+        <button id="qaBtn" class="primary" ${running ? "disabled" : ""}>追问</button>
+      </div>
+    </div>
+    <div id="qaAnswer"></div>
+    <div class="sec">历史追问 · ${state.followups.length}</div>
+    <div id="qaList"></div>`;
+  renderFollowupList();
+  const btn = $("#qaBtn");
+  if (btn) btn.onclick = askFollowup;
+  const input = $("#qaInput");
+  if (input) input.addEventListener("keydown", (e) => { if (e.key === "Enter") askFollowup(); });
+}
+
+function renderFollowupList() {
+  const wrap = $("#qaList");
+  if (!wrap) return;
+  if (!state.followups.length) {
+    wrap.innerHTML = `<div class="empty">还没有追问。</div>`;
+    return;
+  }
+  wrap.innerHTML = state.followups.map((item) => `<div class="qa-item" data-fid="${item.id}">
+      <div class="q">${escapeHtml(item.question)}</div>
+      <div class="m">${item.chars} 字 · ${item.duration_s}s · ${(item.cited_ns || []).length} 篇引用</div>
+    </div>`).join("");
+  wrap.querySelectorAll(".qa-item").forEach((node) => {
+    node.onclick = () => openFollowup(node.dataset.fid);
+  });
+}
+
+async function askFollowup() {
+  const input = $("#qaInput");
+  const question = input ? input.value.trim() : "";
+  if (!question || !state.runId) return;
+  const btn = $("#qaBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "回答中…"; }
+  const box = $("#qaAnswer");
+  if (box) box.innerHTML = `<div class="empty">基于已有证据回答中，约 20–40 秒…</div>`;
+  try {
+    const created = await api(`/api/runs/${state.runId}/followups`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+    });
+    const data = await api(`/api/runs/${state.runId}/followups`).catch(() => ({ items: [] }));
+    state.followups = data.items || state.followups;
+    renderFollowups();
+    await openFollowup(created.id);
+  } catch (e) {
+    if (box) box.innerHTML = `<div class="empty">追问失败：${escapeHtml(e.message)}</div>`;
+    if (btn) { btn.disabled = false; btn.textContent = "追问"; }
+  }
+}
+
+async function openFollowup(followupId) {
+  if (!state.runId) return;
+  try {
+    const data = await api(`/api/runs/${state.runId}/followups/${followupId}`);
+    const box = $("#qaAnswer");
+    if (box) box.innerHTML = `<div class="report">${data.html}</div>`;
+  } catch (e) { toast(`读取追问失败：${e.message}`, true); }
 }
 
 /* ---------------- history ---------------- */
@@ -440,6 +523,7 @@ function resetView() {
   state.trace = [];
   state.sourceList = [];
   state.meta = null;
+  state.followups = [];
   $("#topic").value = "";
   $("#logs").innerHTML = "";
   $("#hint").textContent = "Agent 会自动拆题、检索、交叉验证，并生成带引用的报告。";
