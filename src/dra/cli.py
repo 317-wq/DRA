@@ -359,6 +359,69 @@ def ui(
     serve(Settings(), port=port, open_browser=not no_browser)
 
 
+@app.command()
+def delete(
+    run_id: str = typer.Argument(..., help="要删除的 run id"),
+    yes: bool = typer.Option(False, "--yes", help="跳过确认"),
+) -> None:
+    """删除一次研究及其产物。"""
+    settings = Settings()
+    store = RunStore(settings.runs_dir)
+    try:
+        run = store.open(run_id)
+    except FileNotFoundError:
+        console.print(f"[red]找不到 run：{run_id}[/red]")
+        raise typer.Exit(code=1) from None
+    if not yes and not typer.confirm(f"删除「{run.topic or run_id}」及其全部产物？", default=False):
+        raise typer.Exit(code=1)
+    if store.delete(run_id):
+        console.print("[green]已删除[/green]")
+    else:
+        console.print("[yellow]没有找到该 run[/yellow]")
+
+
+@app.command("export")
+def export_cmd(
+    run_id: str = typer.Argument("", help="run id；留空取最近一次"),
+    format: str = typer.Option("md", "--format", help="md 或 html"),
+    out: Path | None = typer.Option(None, "--out", help="输出文件；缺省打印到终端"),  # noqa: B008
+) -> None:
+    """导出报告为 Markdown 或独立 HTML。"""
+    from markdown_it import MarkdownIt
+
+    settings = Settings()
+    store = RunStore(settings.runs_dir)
+    if not run_id:
+        runs = store.list()
+        if not runs:
+            console.print("[red]还没有研究记录[/red]")
+            raise typer.Exit(code=1)
+        run_id = runs[0]["run_id"]
+    try:
+        run = store.open(run_id)
+    except FileNotFoundError:
+        console.print(f"[red]找不到 run：{run_id}[/red]")
+        raise typer.Exit(code=1) from None
+    report = run.dir / "report.md"
+    if not report.exists():
+        console.print("[red]这次运行没有报告[/red]")
+        raise typer.Exit(code=1)
+    text = report.read_text(encoding="utf-8")
+    if format == "html":
+        body = MarkdownIt("commonmark", {"html": False, "linkify": True}).render(text)
+        content = (
+            "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
+            f"<title>{run.topic or run_id}</title></head><body>{body}</body></html>"
+        )
+    else:
+        content = text
+    if out:
+        out.write_text(content, encoding="utf-8")
+        console.print(f"[green]已导出[/green] {out}")
+    else:
+        console.print(content)
+
+
 @app.command("eval")
 def evaluate_cmd(
     run_id: str = typer.Argument("", help="run id；留空取最近一次"),
