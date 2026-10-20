@@ -89,6 +89,7 @@ class RunContext:
     sources: list[Source] = field(default_factory=list)
     usage: ChatUsage = field(default_factory=ChatUsage)
     notes: list[str] = field(default_factory=list)
+    searched_queries: set[str] = field(default_factory=set)
     _by_url: dict[str, Source] = field(default_factory=dict)
 
     def remaining_sources(self) -> int:
@@ -326,9 +327,16 @@ class ResearchAgent:
     def _collect(self, ctx: RunContext, subquestions: list[SubQuestion], round_no: int) -> int:
         """检索并读取正文，登记证据；返回本轮新增来源数。"""
         targets = subquestions if round_no == 1 else [sq for sq in subquestions if sq.coverage != "enough"]
-        jobs: list[tuple[SubQuestion, str]] = [(sq, q) for sq in targets for q in sq.queries]
+        jobs: list[tuple[SubQuestion, str]] = [
+            (sq, q)
+            for sq in targets
+            for q in sq.queries
+            if q.strip().lower() not in ctx.searched_queries
+        ]
         if not jobs:
             return 0
+        # 记下来，跨轮次也不重复搜同一句（省 Tavily 额度）
+        ctx.searched_queries.update(q.strip().lower() for _, q in jobs)
 
         # 给读取环节留出一半预算
         room = ctx.budget.max_tool_calls - ctx.budget.tool_calls
