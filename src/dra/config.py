@@ -196,6 +196,10 @@ class Settings(BaseSettings):
         default_factory=lambda: data_dir() / "kb.sqlite3",
         validation_alias=AliasChoices("DRA_KB_PATH"),
     )
+    # 报告里数字的可核验率低于该值时，触发一次“带证据的重写”
+    min_number_support: float = Field(
+        default=0.75, validation_alias=AliasChoices("DRA_MIN_NUMBER_SUPPORT")
+    )
 
     @classmethod
     def settings_customise_sources(
