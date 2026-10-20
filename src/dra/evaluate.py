@@ -43,10 +43,12 @@ def _cite_numbers(text: str) -> list[int]:
 
 def _numbers(text: str) -> list[str]:
     found: list[str] = []
-    for raw in NUM_RE.findall(text):
+    # 先把 [n] 引用标记去掉，避免把编号当成数字
+    clean = CITE_RE.sub("", text)
+    for raw in NUM_RE.findall(clean):
         if raw in YEARS:
             continue
-        has_unit = bool(re.search(rf"{re.escape(raw)}\s*{UNIT_RE}", text, re.I))
+        has_unit = bool(re.search(rf"{re.escape(raw)}\s*{UNIT_RE}", clean, re.I))
         if float(raw) < 10 and "." not in raw and not has_unit:
             continue
         found.append(raw)
@@ -63,6 +65,10 @@ def evaluate_report(
     """计算一份报告的证据质量指标。"""
     by_n = {src.n: src for src in sources}
     body = report_text.split("## 参考资料")[0]
+    # 标题与引用块里的日期/编号不算正文事实
+    body = "\n".join(
+        line for line in body.splitlines() if not line.strip().startswith(("#", ">"))
+    )
     sentences = [item.strip() for item in SENT_SPLIT.split(body) if item.strip()]
 
     citations_total = 0
@@ -86,8 +92,9 @@ def evaluate_report(
             cited_factual += 1
         for num in nums:
             numbers_total += 1
+            pattern = re.compile(rf"(?<![\d.]){re.escape(num)}(?![\d.])")
             supported = any(
-                num in (by_n[n].snippet or "") for n in cited_ns if n in by_n
+                pattern.search(by_n[n].snippet or "") for n in cited_ns if n in by_n
             )
             if supported:
                 numbers_supported += 1
