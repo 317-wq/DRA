@@ -164,3 +164,10 @@ def test_dedup_sources_across_queries(tmp_path):
     urls = [s.url for s in result.sources]
     assert len(urls) == len(set(urls))
     assert len(urls) <= 10
+
+
+def test_run_accepts_precreated_run(tmp_path):
+    agent = build_agent(tmp_path)
+    run = agent.store.create("预创建")
+    result = agent.run("测试主题", budget=Budget(max_tool_calls=16), run=run)
+    assert result.run_id == run.id
