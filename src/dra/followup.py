@@ -82,7 +82,9 @@ class FollowupEngine:
             temperature=0.4,
             max_tokens=3000,
         )
-        body, cited, dropped = finalize_report(res.text, selected, renumber=False)
+        # 去掉模型自拟的一级标题，避免和“# 追问：…”重复
+        text = re.sub(r"^#\s+[^\n]*\n+", "", res.text.strip(), count=1)
+        body, cited, dropped = finalize_report(text, selected, renumber=False)
 
         fid = datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(2)
         folder = run.dir / "followups" / fid
