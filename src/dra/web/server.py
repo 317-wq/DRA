@@ -260,7 +260,7 @@ def find_free_port(host: str, start: int, tries: int = 20) -> int:
                 sock.bind((host, port))
             except OSError:
                 continue
-            return port
+            return sock.getsockname()[1]
     raise RuntimeError(f"{host} 上 {start}–{start + tries - 1} 没有空闲端口")
 
 
