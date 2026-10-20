@@ -119,3 +119,4 @@ DRA_LIVE=1 ~/.local/bin/uv run pytest -m live   # 真实链路 smoke（会花钱
 - 事件 schema 已按 SSE 直出的形态设计，但尚未被真实消费者验证。
 - 部分站点（YouTube / Wikipedia）抓取成功但服务器直连不可达，`link_status` 会标 `unreachable`。
 - 无 Web、无知识库、无追问——见 ROADMAP 0.2–0.4。
+# DRA
