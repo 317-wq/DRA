@@ -94,7 +94,7 @@
   `GET /api/runs/{id}/eval` 与 `dra eval` 输出引用覆盖、数字可核验率、来源多样性，纯本地计算。
 - 写作约束：具体数字必须逐字来自证据；写后本地核验，低于 `DRA_MIN_NUMBER_SUPPORT`（默认 0.75）
   时带证据校对一次；修复稿需同时满足“可核验率 +5pp、引用 ≥60%、长度 ≥60%”才采纳，否则保留原稿。
-- 安装与分发：PyPI（`uv tool install dra` / `uvx dra`）为主，GitHub Release 为备；安装后不依赖仓库目录，配置与数据都在用户目录。
+- 安装与分发：PyPI 发行名 `dra-research`、命令 `dra`（`uv tool install dra-research` / `uvx --from dra-research dra`）为主，GitHub Release 为备；安装后不依赖仓库目录，配置与数据都在用户目录。
 - 发布流程：`v*` tag 触发 `.github/workflows/release.yml`；版本号目前需同步 `pyproject.toml` 与 `src/dra/__init__.py`，清单见 `RELEASE.md`。
 - 配置优先级：初始化参数 > 环境变量（`DRA_*`，兼容 `QWEN_*` / `TAVILY_*`）> 用户 `config.toml` > 项目 `.env` > 默认值。
 - 模型服务：任意 OpenAI 兼容端点；`model` 为主模型，`fallback_models` 为降级链，某个模型不可用时按序切换。
