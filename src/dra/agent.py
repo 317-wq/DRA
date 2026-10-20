@@ -155,9 +155,9 @@ class ResearchAgent:
                 "max_sources": max_sources,
                 "budget": budget.snapshot(),
                 "models": {
-                    "plan": self.settings.plan_model,
-                    "analyze": self.settings.analyze_model,
-                    "write": self.settings.write_model,
+                    "plan": self.settings.plan_model_resolved,
+                    "analyze": self.settings.analyze_model_resolved,
+                    "write": self.settings.write_model_resolved,
                 },
             },
         )
@@ -228,7 +228,7 @@ class ResearchAgent:
             subquestions=subquestions,
             usage=ctx.usage,
             budget=budget.snapshot(),
-            model=self.settings.write_model,
+            model=self.settings.write_model_resolved,
             notes=ctx.notes,
         )
         run.write_json("run.json", result.model_dump())
@@ -254,7 +254,7 @@ class ResearchAgent:
         res = self._chat(
             ctx,
             plan_messages(ctx.topic, n=4),
-            model=self.settings.plan_model,
+            model=self.settings.plan_model_resolved,
             max_tokens=1800,
             json_mode=True,
             stage="plan",
@@ -428,7 +428,7 @@ class ResearchAgent:
                             "content": "只输出最终 JSON，不要展开推理；每条 key_points 控制在 60 字内。",
                         }
                     ],
-                    model=self.settings.analyze_model,
+                    model=self.settings.analyze_model_resolved,
                     max_tokens=limit,
                     temperature=0.2 if attempt == 1 else 0.1,
                     json_mode=True,
@@ -521,7 +521,7 @@ class ResearchAgent:
             res = self._chat(
                 ctx,
                 replan_messages(ctx.topic, gaps),
-                model=self.settings.plan_model,
+                model=self.settings.plan_model_resolved,
                 max_tokens=3000,
                 json_mode=True,
                 stage="replan",
@@ -557,12 +557,14 @@ class ResearchAgent:
             raise LLMError("没有任何可用来源，无法生成报告")
 
         ctx.bus.emit(
-            "write.started", "write", {"sources": len(ctx.sources), "model": self.settings.write_model}
+            "write.started",
+            "write",
+            {"sources": len(ctx.sources), "model": self.settings.write_model_resolved},
         )
         res = self._chat(
             ctx,
             write_messages(ctx.topic, subquestions, ctx.sources),
-            model=self.settings.write_model,
+            model=self.settings.write_model_resolved,
             max_tokens=6000,
             temperature=0.5,
             stage="write",
