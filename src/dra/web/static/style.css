@@ -328,3 +328,34 @@ textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,
 .qa-item .m { font-size: 10.5px; color: var(--text-3); margin-top: 4px; }
 #qaAnswer { margin: 4px 0 16px; }
 #qaAnswer:empty { display: none; }
+
+/* ---------------- quality ---------------- */
+.score-card {
+  display: flex; align-items: baseline; gap: 12px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: 18px 20px; margin-bottom: 16px;
+}
+.score-card .big { font-size: 40px; font-weight: 700; line-height: 1; }
+.score-card .grade {
+  font-size: 12px; padding: 2px 9px; border-radius: 6px;
+  border: 1px solid var(--border-2); color: var(--text-2);
+}
+.score-card .meta { margin-left: auto; color: var(--text-3); font-size: 11px; text-align: right; line-height: 1.8; }
+.metric-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 8px; margin-bottom: 16px;
+}
+.metric {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 9px; padding: 10px 12px;
+}
+.metric .k { font-size: 10.5px; color: var(--text-3); margin-bottom: 4px; }
+.metric .v { font-size: 17px; font-weight: 600; }
+.warn-box {
+  background: #1c1608; border: 1px solid #78350f; border-radius: 9px;
+  padding: 10px 13px; margin-bottom: 14px; color: #fcd34d; font-size: 11.5px; line-height: 1.8;
+}
+.unverified { background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 10px 13px; }
+.unverified .row { font-size: 11.5px; color: var(--text-2); padding: 5px 0; border-bottom: 1px dashed var(--border); }
+.unverified .row:last-child { border-bottom: none; }
+.unverified .num { color: #fcd34d; font-weight: 600; margin-right: 6px; }
