@@ -1,0 +1,43 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: 构建 sdist 与 wheel
+        run: uv build
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+
+  publish-pypi:
+    # 在仓库 Settings → Variables 里设置 PUBLISH_TO_PYPI=true 才会执行。
+    # 需要先在 PyPI 配置 Trusted Publisher（见 RELEASE.md）。
+    if: vars.PUBLISH_TO_PYPI == 'true'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: 构建
+        run: uv build
+      - name: 发布到 PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
