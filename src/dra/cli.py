@@ -22,7 +22,7 @@ from rich.text import Text
 from dra import __version__
 from dra.agent import ResearchAgent
 from dra.budget import Budget
-from dra.config import Settings, config_path
+from dra.config import ConfigWriteError, Settings, config_path
 from dra.onboarding import PRESETS, collect_checks, failed_critical, save_config
 from dra.store import RunStore
 
@@ -439,14 +439,18 @@ def init(
         console.print("[yellow]已取消[/yellow]")
         raise typer.Exit(code=1)
 
-    written = save_config(
-        base_url=base_url,
-        api_key=api_key,
-        model=model,
-        tavily_api_key=tavily_key,
-        embedding_model=embedding_model,
-        runs_dir=runs_dir,
-    )
+    try:
+        written = save_config(
+            base_url=base_url,
+            api_key=api_key,
+            model=model,
+            tavily_api_key=tavily_key,
+            embedding_model=embedding_model,
+            runs_dir=runs_dir,
+        )
+    except ConfigWriteError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from None
     console.print(f"[green]已写入[/green] {written}  [dim](权限 0600)[/dim]")
     console.print("\n下一步：")
     console.print("  dra doctor        [dim]检查 Key 与网络是否可用[/dim]")
