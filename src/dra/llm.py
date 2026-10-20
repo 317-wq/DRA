@@ -65,9 +65,11 @@ class ModelAdapter:
     def __init__(self, settings: Settings) -> None:
         """保存配置并创建 OpenAI 兼容客户端。"""
         self.settings = settings
+        # 空 key 时用占位符，让 require_llm() 给出可执行的提示，
+        # 而不是在客户端构造阶段抛 SDK 的 Missing credentials。
         self._client = OpenAI(
-            api_key=settings.qwen_api_key,
-            base_url=settings.qwen_base_url,
+            api_key=settings.api_key or "missing",
+            base_url=settings.base_url,
             timeout=settings.request_timeout_s,
             max_retries=0,
         )
@@ -84,7 +86,7 @@ class ModelAdapter:
         retries: int = 1,
     ) -> ChatResult:
         """调用对话模型；主模型不可用时按 .env 里的模型顺序逐个降级。"""
-        primary = model or self.settings.plan_model
+        primary = model or self.settings.plan_model_resolved
         tried: list[str] = []
         errors: list[str] = []
         for candidate in self.settings.model_chain(primary):
@@ -207,7 +209,7 @@ class ModelAdapter:
         for i in range(0, len(texts), 10):
             batch = texts[i : i + 10]
             resp = self._client.embeddings.create(
-                model=self.settings.qwen_embedding_model,
+                model=self.settings.embedding_model,
                 input=batch,
             )
             out.extend([d.embedding for d in resp.data])
