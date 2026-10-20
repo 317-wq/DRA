@@ -18,6 +18,8 @@ def plan_messages(topic: str, n: int = 4) -> list[dict[str, str]]:
 2. 涉及"最新/现状/价格/版本"时，检索式里带年份 2026。
 3. 中文主题用中文检索式，技术名词保留英文原名（如 Agent、RAG、MCP、MCP Server）。
 4. id 从 1 开始连续编号。
+5. 涉及性能、成本、对比、安全、争议的子问题，至少给一条指向一手来源的检索式：
+   用 `site:arxiv.org`、`site:github.com`，或该领域官方文档域名。不要只给"对比/推荐/2026"。
 
 只输出 JSON：
 {{"subquestions":[{{"id":1,"question":"...","queries":["...","..."]}}]}}"""
@@ -61,6 +63,10 @@ def analyze_messages(
 - gap：coverage 不是 enough 时，用一句话说明还缺什么（缺哪类来源或哪个维度）。
   只描述本次证据："本次检索到的资料中未见……"，禁止写"行业完全空白/没有研究"这类绝对判断。
 
+注意：摘录里可能出现 Markdown 表格（`| 模型 | 0.09 | 5.2 |`）。表格中的数字要连同口径
+写进 key_points（例如"512 上下文下召回 7.2"）。只有确实没有任何量化数字时，
+才能以"缺量化数据"为由判 partial/gap。
+
 只输出 JSON：
 {{"items":[{{"id":1,"key_points":["...[1][3]"],"evidence_ns":[1,3],"coverage":"partial","gap":"..."}}]}}"""
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -79,8 +85,12 @@ def replan_messages(topic: str, gaps: list[SubQuestion]) -> list[dict[str, str]]
 以下子问题证据不足：
 {chr(10).join(lines)}
 
-为每个子问题补 1-2 条**新的**检索式（必须与已有检索式不同），专门针对上面的缺口。
-如果缺口是"缺官方/一手资料"，就换更具体的厂商名或文档关键词；缺对比就加"对比/benchmark/评测"。
+为每个子问题补 1-2 条**新的**检索式（必须与已有检索式不同），按缺口类型来换：
+- 缺量化/基准/延迟/成本 → 用具体基准名（LongMemEval、LOCOMO、ANN-benchmarks 等），
+  或 `site:arxiv.org`、`site:github.com`、`site:ann-benchmarks.com`；
+- 缺正文/只有标题 → 换官方文档 `site:docs.<厂商>.com` 或 `site:github.com` 仓库 README；
+- 缺争议/监管 → `site:gov.cn`、`site:arxiv.org` 或行业媒体。
+不要只改年份或重复已有检索式。
 
 只输出 JSON：
 {{"queries":[{{"id":1,"queries":["...","..."]}}]}}"""
