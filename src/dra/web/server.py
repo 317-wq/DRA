@@ -23,6 +23,8 @@ from pydantic import BaseModel, Field
 
 from dra.config import Settings
 from dra.jobs import BusyError, RunManager, read_all_events, read_new_events
+from dra.kb import KnowledgeBase
+from dra.llm import ModelAdapter
 
 RUN_ID_RE = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")
 
@@ -32,12 +34,23 @@ class StartRequest(BaseModel):
     max_sources: int = Field(default=12, ge=4, le=20)
 
 
+class SinkRequest(BaseModel):
+    run_id: str = Field(min_length=8, max_length=32)
+
+
 def _static_dir() -> Path:
     return Path(__file__).parent / "static"
 
 
-def create_app(settings: Settings, manager: RunManager | None = None) -> FastAPI:
+def create_app(
+    settings: Settings,
+    manager: RunManager | None = None,
+    kb_factory=None,
+) -> FastAPI:
     manager = manager or RunManager(settings)
+    kb_factory = kb_factory or (
+        lambda: KnowledgeBase(settings, adapter=ModelAdapter(settings))
+    )
     static_dir = _static_dir()
     app = FastAPI(title="Deep Research Agent", docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
@@ -100,6 +113,68 @@ def create_app(settings: Settings, manager: RunManager | None = None) -> FastAPI
     def run_trace(run_id: str) -> list[dict[str, Any]]:
         run = run_or_404(run_id)
         return read_all_events(run.trace_path)
+
+    @app.get("/api/kb")
+    def kb_index() -> dict[str, Any]:
+        kb = kb_factory()
+        try:
+            return kb.export_index()
+        finally:
+            kb.close()
+
+    @app.get("/api/kb/search")
+    def kb_search(q: str, k: int = 6) -> dict[str, Any]:
+        query = q.strip()
+        if not query:
+            return {"mode": "empty", "hits": [], "keyword_hits": 0, "vector_hits": 0}
+        kb = kb_factory()
+        try:
+            hits, info = kb.search(query, k=max(1, min(k, 20)))
+        finally:
+            kb.close()
+        return {
+            **info,
+            "hits": [
+                {
+                    "doc_id": hit.doc_id,
+                    "title": hit.title,
+                    "run_id": hit.run_id,
+                    "seq": hit.seq,
+                    "text": hit.text,
+                    "score": hit.score,
+                    "keyword": hit.keyword,
+                    "vector": hit.vector,
+                }
+                for hit in hits
+            ],
+        }
+
+    @app.post("/api/kb/sink")
+    def kb_sink(body: SinkRequest) -> dict[str, Any]:
+        run = run_or_404(body.run_id)
+        report = run.dir / "report.md"
+        if not report.exists():
+            raise HTTPException(status_code=409, detail="这次运行还没有报告")
+        meta = manager.meta(body.run_id)
+        kb = kb_factory()
+        try:
+            doc_id, chunks = kb.add_report(
+                run_id=body.run_id,
+                title=meta.get("topic") or body.run_id,
+                text=report.read_text(encoding="utf-8"),
+                source_path=str(report),
+            )
+        finally:
+            kb.close()
+        return {"doc_id": doc_id, "chunks": chunks, "skipped": chunks == 0}
+
+    @app.delete("/api/kb/{doc_id}")
+    def kb_delete(doc_id: int) -> dict[str, bool]:
+        kb = kb_factory()
+        try:
+            return {"removed": kb.remove(doc_id)}
+        finally:
+            kb.close()
 
     @app.get("/api/runs/{run_id}/events")
     def run_events(run_id: str) -> StreamingResponse:
