@@ -1,6 +1,6 @@
 # PROJECT · 深度研究代理（Deep Research Agent）
 
-> 基线版本：v1.1
+> 基线版本：v1.2
 > 最后更新：2026-10-20
 > 说明：本文档只放跨版本稳定的内容（目标架构、技术原则、稳定接口）。
 > 版本范围、依赖与验收见对应的 `MVP-x.y.md`。
@@ -67,7 +67,8 @@
 | 检索 | Tavily Search + Extract | 一步拿到清洗后的正文，省掉自建爬虫 |
 | 存储 | 文件系统 `runs/<run_id>/` + SQLite | 产物可读、可 diff；元数据可查询 |
 | 向量检索 | 百炼 Embedding（1024 维）+ 小规模本地索引 | 0.3 知识库再引入，先不建向量库 |
-| 配置管理 | pydantic-settings + `.env` | 统一管理模型与密钥 |
+| 配置管理 | `config.toml`（系统配置目录）+ 环境变量 + 开发用 `.env` | BYOK；优先级 参数 > 环境 > config.toml > .env |
+| 运行数据 | 系统数据目录（platformdirs） | 安装成工具后不污染仓库；可按用户覆盖 |
 | 测试 | pytest（单测 + 1 条真实链路 smoke） | 关键路径可回归 |
 | 执行追踪 | JSONL 事件（`trace.jsonl`） | 直接喂给"执行轨迹"页与后续评测 |
 | 代码规范 | Ruff | 检查与格式统一 |
@@ -79,7 +80,10 @@
 
 > 只定边界，具体字段与参数放 MVP。字段名一旦写进这里，就按稳定接口对待。
 
-- CLI 入口：`dra run "<主题>"` 发起研究；`dra show <run_id>` 查看已完成研究的报告与轨迹；`dra list` 列出历史 Run。
+- CLI 入口：`dra init` 配置、`dra doctor` 自检、`dra run "<主题>"` 发起研究、`dra show <run_id>` 查看报告与轨迹、`dra list` 列出历史 Run。
+- 安装与分发：以 `uv tool install` / GitHub Release 为主；安装后不依赖仓库目录，配置与数据都在用户目录。
+- 配置优先级：初始化参数 > 环境变量（`DRA_*`，兼容 `QWEN_*` / `TAVILY_*`）> 用户 `config.toml` > 项目 `.env` > 默认值。
+- 模型服务：任意 OpenAI 兼容端点；`model` 为主模型，`fallback_models` 为降级链，某个模型不可用时按序切换。
 - Model Adapter：
   - `chat(messages, *, model, temperature, response_format) -> ChatResult`
   - `embed(texts) -> list[list[float]]`
@@ -109,3 +113,4 @@
 |---|---|---|
 | v1.0 | 2026-10-20 | 初版：从架构图与 `5.html` 原型提取目标架构、技术原则与稳定接口 |
 | v1.1 | 2026-10-20 | 模型适配层增加思考开关（默认关闭）：单次研究 245s → 70s，三角色默认 `qwen3.8-max`；报告收尾对引用 URL 做可达性复核（`link_status`） |
+| v1.2 | 2026-10-20 | 面向"本地工具"重构配置与分发：`config.toml` + 用户数据目录 + BYOK + 任意 OpenAI 兼容端点 + 模型降级链；新增 `dra init` / `dra doctor` |
