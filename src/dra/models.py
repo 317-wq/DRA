@@ -69,7 +69,7 @@ class ChatUsage(BaseModel):
 class RunResult(BaseModel):
     run_id: str
     topic: str
-    status: Literal["done", "partial", "failed"]
+    status: Literal["done", "partial", "failed", "cancelled"]
     started_at: str
     finished_at: str
     duration_s: float
