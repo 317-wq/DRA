@@ -359,6 +359,87 @@ def ui(
     serve(Settings(), port=port, open_browser=not no_browser)
 
 
+@app.command("eval")
+def evaluate_cmd(
+    run_id: str = typer.Argument("", help="run id；留空取最近一次"),
+    all_runs: bool = typer.Option(False, "--all", help="评估全部 run 并给出基线"),
+) -> None:
+    """本地评估报告的证据质量：引用覆盖、数字可核验性、来源多样性（不调用模型）。"""
+    from dra.evaluate import evaluate_run, summarize
+
+    settings = Settings()
+    store = RunStore(settings.runs_dir)
+    if all_runs:
+        results = []
+        for meta in store.list():
+            try:
+                results.append(evaluate_run(store.open(meta["run_id"])))
+            except FileNotFoundError:
+                continue
+        summary = summarize(results)
+        if not results:
+            console.print("[dim]没有可评估的报告[/dim]")
+            return
+        table = Table(box=None, pad_edge=False)
+        table.add_column("run", style="cyan")
+        table.add_column("分数", justify="right")
+        table.add_column("等级")
+        table.add_column("引用覆盖", justify="right")
+        table.add_column("数字可核验", justify="right")
+        for item in results:
+            table.add_row(
+                item["run_id"],
+                str(item["score"]),
+                item["grade"],
+                f"{item['citations']['citation_rate']:.0%}",
+                f"{item['numbers']['support_rate']:.0%}",
+            )
+        console.print(table)
+        console.print(
+            f"\n[bold]基线[/bold] {summary['runs']} 份 · 均分 {summary['mean_score']} "
+            f"· 区间 {summary['min_score']}–{summary['max_score']} "
+            f"· 等级 {summary['grades']}"
+        )
+        return
+
+    if not run_id:
+        runs = store.list()
+        if not runs:
+            console.print("[red]还没有研究记录[/red]")
+            raise typer.Exit(code=1)
+        run_id = runs[0]["run_id"]
+    try:
+        result = evaluate_run(store.open(run_id))
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from None
+
+    color = {"A": "green", "B": "cyan", "C": "yellow", "D": "red"}[result["grade"]]
+    console.print(
+        Panel(
+            f"[bold]{result['score']}[/bold] / 100  ·  等级 [{color}]{result['grade']}[/{color}]\n"
+            f"引用覆盖 {result['citations']['citation_rate']:.0%}  ·  "
+            f"数字可核验 {result['numbers']['support_rate']:.0%}  ·  "
+            f"来源 {result['sources']['total']} 篇 / {result['sources']['domains']} 个域名",
+            title=f"证据质量 · {run_id}",
+            border_style=color,
+        )
+    )
+    if result["warnings"]:
+        console.print("[bold]提示[/bold]")
+        for warning in result["warnings"]:
+            console.print(f"  [yellow]· {warning}[/yellow]")
+    unverified = result["numbers"]["unverified"]
+    if unverified:
+        console.print("\n[bold]未在引用来源中找到的数字[/bold]")
+        for item in unverified[:5]:
+            console.print(
+                f"  [yellow]{item['number']}[/yellow] ← 引用 {item['cited'] or '无'} "
+                f"· {item['sentence'][:60]}"
+            )
+    console.print(f"\n[dim]已写入 {store.open(run_id).dir / 'eval.json'}[/dim]")
+
+
 @app.command()
 def ask(
     question: str = typer.Argument(..., help="追问内容"),
