@@ -33,6 +33,9 @@ class Source(BaseModel):
     subquestion_ids: list[int] = Field(default_factory=list)
     via: str = "tavily-extract"  # tavily-extract | fallback-fetch
     link_status: str = "unchecked"  # 报告收尾时复核的 HTTP 状态
+    tier: int = 1  # 3 一手 / 2 专业媒体 / 1 一般 / 0 自媒体
+    tier_label: str = "一般"
+    quality: int = 50  # 0–100，见 dra.quality
 
 
 class AnalysisItem(BaseModel):
