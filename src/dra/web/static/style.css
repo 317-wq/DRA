@@ -304,3 +304,27 @@ textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .toast.error { background: #1c1010; border-color: #7f1d1d; color: #fca5a5; }
+
+/* ---------------- follow-ups ---------------- */
+.qa-box {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 13px; margin-bottom: 14px;
+}
+.qa-box input {
+  width: 100%; background: #0b1118; color: var(--text);
+  border: 1px solid var(--border-2); border-radius: 8px;
+  padding: 9px 11px; font: inherit; outline: none;
+}
+.qa-box input:focus { border-color: var(--accent); }
+.qa-row { display: flex; align-items: center; gap: 10px; margin-top: 9px; }
+.qa-row .hint { font-size: 10.5px; color: var(--text-3); }
+.qa-row button { margin-left: auto; }
+.qa-item {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 9px; padding: 10px 12px; margin-bottom: 7px; cursor: pointer;
+}
+.qa-item:hover { border-color: var(--accent); }
+.qa-item .q { font-size: 12px; color: var(--text); }
+.qa-item .m { font-size: 10.5px; color: var(--text-3); margin-top: 4px; }
+#qaAnswer { margin: 4px 0 16px; }
+#qaAnswer:empty { display: none; }
