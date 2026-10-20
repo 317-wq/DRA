@@ -76,12 +76,15 @@ def analyze_messages(
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
-def replan_messages(topic: str, gaps: list[SubQuestion]) -> list[dict[str, str]]:
-    """构造补充检索提示词。"""
+def replan_messages(
+    topic: str, gaps: list[SubQuestion], source_counts: dict[int, int] | None = None
+) -> list[dict[str, str]]:
+    """构造补充检索提示词；带上每个子问题已有的来源数。"""
     system = "你是研究检索策略专家。只输出 JSON，不输出解释。"
+    counts = source_counts or {}
     lines = []
     for sq in gaps:
-        lines.append(f"- 子问题 {sq.id}：{sq.question}")
+        lines.append(f"- 子问题 {sq.id}：{sq.question}（已有 {counts.get(sq.id, 0)} 篇来源）")
         lines.append(f"  已有检索式：{sq.queries}")
         lines.append(f"  缺口：{sq.gap or '信息不足'}")
     user = f"""研究主题：{topic}
@@ -94,7 +97,8 @@ def replan_messages(topic: str, gaps: list[SubQuestion]) -> list[dict[str, str]]
   或 `site:arxiv.org`、`site:github.com`、官方 benchmark 文档域名；
 - 缺正文/只有标题 → 换官方文档 `site:docs.<厂商>.com` 或 `site:github.com` 仓库 README；
 - 缺争议/监管 → `site:gov.cn`、`site:arxiv.org` 或行业媒体。
-不要只改年份或重复已有检索式。
+已有来源少于 2 篇的子问题，必须给一条带 `site:` 或具体基准项目名的检索式，
+不要只改措辞或年份；宽泛查询只会拿回同一批页面。
 
 只输出 JSON：
 {{"queries":[{{"id":1,"queries":["...","..."]}}]}}"""
