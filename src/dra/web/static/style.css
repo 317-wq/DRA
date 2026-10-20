@@ -359,3 +359,13 @@ textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,
 .unverified .row { font-size: 11.5px; color: var(--text-2); padding: 5px 0; border-bottom: 1px dashed var(--border); }
 .unverified .row:last-child { border-bottom: none; }
 .unverified .num { color: #fcd34d; font-weight: 600; margin-right: 6px; }
+
+.hist { position: relative; }
+.hist-del {
+  margin-left: auto; background: none; border: none; cursor: pointer;
+  color: var(--text-3); font-size: 13px; line-height: 1; padding: 0 2px;
+}
+.hist-del:hover { color: #fca5a5; }
+.badge.queued { color: #fcd34d; border-color: #78350f; background: #1f1808; }
+.badge.cancelled { color: #cbd5e1; border-color: #334155; background: #11161f; }
+.badge.interrupted { color: #fdba74; border-color: #7c2d12; background: #1c1208; }
