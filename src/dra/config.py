@@ -33,7 +33,7 @@ def config_path() -> Path:
     override = os.environ.get("DRA_CONFIG_FILE")
     if override:
         return Path(override).expanduser()
-    return Path(user_config_dir(APP_NAME, appauthor=False)) / "config.toml"
+    return Path(user_config_dir(APP_NAME, appauthor=False, roaming=True)) / "config.toml"
 
 
 def data_dir() -> Path:
@@ -73,10 +73,25 @@ def _toml_value(value: Any) -> str:
     return json.dumps(str(value), ensure_ascii=False)
 
 
+class ConfigWriteError(RuntimeError):
+    """配置目录不可写。把系统错误翻译成用户能执行的下一步。"""
+
+
 def write_toml_config(values: dict[str, Any], path: Path | None = None) -> Path:
     """写入用户配置（权限 0600），只写传入的键。"""
     target = path or config_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ConfigWriteError(
+            f"无法创建配置目录：{target.parent}\n"
+            f"  系统错误：{exc}\n"
+            "  常见原因：权限限制、杀毒/EDR 拦截，或当前终端被限制为只能写工作区。\n"
+            "  解决办法：把配置与数据放到可写目录后重试，例如在项目目录内：\n"
+            '    $env:DRA_CONFIG_FILE = "$PWD\\config.toml"\n'
+            '    $env:DRA_DATA_DIR    = "$PWD\\data"\n'
+            "    dra init"
+        ) from exc
     lines = [
         "# Deep Research Agent 配置",
         "# 由 `dra init` 生成，可直接编辑；密钥以明文保存在本机，请勿提交到仓库。",
