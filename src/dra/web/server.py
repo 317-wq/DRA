@@ -22,6 +22,7 @@ from markdown_it import MarkdownIt
 from pydantic import BaseModel, Field
 
 from dra.config import Settings
+from dra.evaluate import evaluate_run
 from dra.followup import FollowupEngine
 from dra.jobs import BusyError, RunManager, read_all_events, read_new_events
 from dra.kb import KnowledgeBase
@@ -121,6 +122,13 @@ def create_app(
     def run_trace(run_id: str) -> list[dict[str, Any]]:
         run = run_or_404(run_id)
         return read_all_events(run.trace_path)
+
+    @app.get("/api/runs/{run_id}/eval")
+    def run_eval(run_id: str) -> dict[str, Any]:
+        run = run_or_404(run_id)
+        if not (run.dir / "report.md").exists() or not (run.dir / "sources.json").exists():
+            raise HTTPException(status_code=409, detail="这次运行缺少报告或来源")
+        return evaluate_run(run)
 
     @app.get("/api/runs/{run_id}/followups")
     def list_followups(run_id: str) -> dict[str, Any]:
