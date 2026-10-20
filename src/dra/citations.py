@@ -10,7 +10,9 @@ CITE_RE = re.compile(r"\[(\d+(?:\s*[,，]\s*\d+)*)\]")
 URL_RE = re.compile(r"https?://\S+")
 
 
-def finalize_report(body: str, sources: list[Source]) -> tuple[str, list[Source], int]:
+def finalize_report(
+    body: str, sources: list[Source], *, renumber: bool = True
+) -> tuple[str, list[Source], int]:
     """返回 (正文+参考资料, 被引用的来源(已重排), 被丢弃的无效引用数)。
 
     - 模型只能引用 sources 里已有的编号，其余一律丢弃；
@@ -31,11 +33,17 @@ def finalize_report(body: str, sources: list[Source]) -> tuple[str, list[Source]
             if n not in valid:
                 dropped += 1
                 continue
-            if n not in mapping:
-                order.append(n)
-                mapping[n] = len(order)
-            if mapping[n] not in new_nums:
-                new_nums.append(mapping[n])
+            if renumber:
+                if n not in mapping:
+                    order.append(n)
+                    mapping[n] = len(order)
+                if mapping[n] not in new_nums:
+                    new_nums.append(mapping[n])
+            else:
+                if n not in order:
+                    order.append(n)
+                if n not in new_nums:
+                    new_nums.append(n)
         if not new_nums:
             return ""
         return "[" + ",".join(str(x) for x in new_nums) + "]"
@@ -47,7 +55,8 @@ def finalize_report(body: str, sources: list[Source]) -> tuple[str, list[Source]
     cited: list[Source] = []
     for old_n in order:
         src = valid[old_n].model_copy(deep=True)
-        src.n = mapping[old_n]
+        if renumber:
+            src.n = mapping[old_n]
         cited.append(src)
 
     if not cited:
