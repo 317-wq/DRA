@@ -198,6 +198,18 @@ function handle(ev) {
   }
 }
 
+function statusLabel(status) {
+  return {
+    done: "完成",
+    partial: "部分完成",
+    failed: "失败",
+    running: "研究中",
+    queued: "排队中",
+    cancelled: "已取消",
+    interrupted: "已中断",
+  }[status] || status;
+}
+
 function setBadge(cls, text) {
   const badge = $("#runBadge");
   badge.className = `badge ${cls}`;
@@ -222,7 +234,7 @@ function finish(payload) {
     ? payload.sources.length
     : (payload.sources ?? state.sources);
   const status = payload.status || "partial";
-  setBadge(status, status === "done" ? "完成" : "部分完成");
+  setBadge(status, statusLabel(status));
   $("#startBtn").disabled = false;
   $("#hint").textContent = "本次研究已结束，可以继续开新主题。";
   if (state.runId) {
@@ -284,8 +296,7 @@ async function loadRun(runId, options = {}) {
   state.reportHtml = "";
   $("#viewTitle").textContent = meta.topic || "研究";
   const status = meta.status || "running";
-  const label = { done: "完成", partial: "部分完成", failed: "失败", running: "研究中" }[status] || status;
-  setBadge(status, label);
+  setBadge(status, statusLabel(status));
 
   if (!options.keepStages) {
     replayStages(trace);
@@ -316,20 +327,41 @@ function renderPanel() {
   const panel = $("#panel");
   if (state.tab === "report") {
     if (!state.reportHtml) {
-      panel.innerHTML = `<div class="empty">${state.meta?.status === "running" ? "研究进行中，报告生成后自动显示。" : "还没有报告。"}</div>`;
+      const status = state.meta?.status || "";
+      const notes = (state.meta?.notes || []).map((note) => `· ${escapeHtml(note)}`).join("<br>");
+      const text = status === "running" || status === "queued"
+        ? "研究进行中，报告生成后自动显示。"
+        : `状态：${escapeHtml(statusLabel(status))}`;
+      panel.innerHTML = `<div class="empty">${text}${notes ? `<br>${notes}` : ""}</div>`;
       return;
     }
     const meta = state.meta || {};
+    const actions = [];
+    if (meta.status === "running" || meta.status === "queued") {
+      actions.push(`<button id="cancelBtn" class="ghost-btn">取消</button>`);
+    } else {
+      actions.push(`<button id="retryBtn" class="ghost-btn">重试</button>`);
+    }
+    actions.push(`<button id="exportBtn" class="ghost-btn">导出 MD</button>`);
+    actions.push(`<button id="sinkBtn" class="ghost-btn">沉淀到知识库</button>`);
     const head = `<div class="meta">
       <span>${escapeHtml(meta.started_at || "")}</span>
       <span>${state.sourceList.length} 篇来源</span>
       <span>${meta.usage?.total_tokens || 0} token</span>
       <span>${meta.duration_s || 0}s</span>
-      <button id="sinkBtn" class="ghost-btn">沉淀到知识库</button>
+      ${actions.join("")}
     </div>`;
     panel.innerHTML = head + `<div class="report">${state.reportHtml}</div>`;
     const sinkBtn = $("#sinkBtn");
     if (sinkBtn) sinkBtn.onclick = sinkCurrent;
+    const cancelBtn = $("#cancelBtn");
+    if (cancelBtn) cancelBtn.onclick = cancelCurrent;
+    const retryBtn = $("#retryBtn");
+    if (retryBtn) retryBtn.onclick = retryCurrent;
+    const exportBtn = $("#exportBtn");
+    if (exportBtn) exportBtn.onclick = () => {
+      if (state.runId) window.open(`/api/runs/${state.runId}/export?format=md`, "_blank");
+    };
     return;
   }
 
@@ -512,7 +544,20 @@ async function renderHistory() {
       meta.appendChild(el("span", "", run.status || "running"));
       meta.appendChild(el("span", "", `${(run.sources || []).length} 篇`));
       meta.appendChild(el("span", "", (run.started_at || "").slice(5, 16).replace("T", " ")));
+      const del = el("button", "hist-del", "×");
+      del.title = "删除这次研究";
+      del.onclick = async (event) => {
+        event.stopPropagation();
+        if (!confirm(`删除「${run.topic || run.run_id}」及其产物？`)) return;
+        try {
+          await api(`/api/runs/${run.run_id}`, { method: "DELETE" });
+          if (state.runId === run.run_id) resetView();
+          else renderHistory();
+          toast("已删除");
+        } catch (e) { toast(`删除失败：${e.message}`, true); }
+      };
       item.appendChild(title);
+      meta.appendChild(del);
       item.appendChild(meta);
       wrap.appendChild(item);
     });
@@ -644,6 +689,38 @@ async function searchKb() {
   } catch (e) {
     box.innerHTML = `<div class="empty">检索失败：${escapeHtml(e.message)}</div>`;
   }
+}
+
+async function cancelCurrent() {
+  if (!state.runId) return;
+  try {
+    const res = await api(`/api/runs/${state.runId}/cancel`, { method: "POST" });
+    toast(res.result === "queued" ? "已取消排队任务" : "已请求取消，等待当前步骤结束");
+    if (res.result !== "queued") pollUntilDone(state.runId);
+  } catch (e) { toast(`取消失败：${e.message}`, true); }
+}
+
+async function retryCurrent() {
+  if (!state.runId) return;
+  const old = state.runId;
+  try {
+    const res = await api(`/api/runs/${old}/retry`, { method: "POST" });
+    closeStream();
+    state.subqs = [];
+    state.coverage = {};
+    state.sources = 0;
+    state.reportHtml = "";
+    state.evalData = null;
+    renderStages();
+    renderSubqs();
+    $("#logs").innerHTML = "";
+    $("#panel").innerHTML = `<div class="empty">已重新排队，等待执行。</div>`;
+    state.runId = res.run_id;
+    setBadge("queued", "排队中");
+    follow(res.run_id);
+    renderHistory();
+    toast("已重新排队");
+  } catch (e) { toast(`重试失败：${e.message}`, true); }
 }
 
 async function sinkCurrent() {
