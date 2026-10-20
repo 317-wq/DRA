@@ -45,7 +45,7 @@ tag 推送后 `.github/workflows/release.yml` 会：
 
 ## 4. PyPI 配置（一次性）
 
-1. 在 <https://pypi.org> 注册项目名 `dra`（首次发布时创建）；
+1. 在 <https://pypi.org> 注册项目名 `dra-research`（发行名；命令仍是 `dra`）；
 2. 打开项目的 **Publishing → Trusted Publishers**，添加：
    - Owner: `317-wq`
    - Repository: `DRA`
@@ -59,7 +59,7 @@ tag 推送后 `.github/workflows/release.yml` 会：
 ## 5. 手动发布（兜底）
 
 ```bash
-uv publish --token <PYPI_TOKEN> dist/*
+uv publish --token <PYPI_TOKEN> dist/*.whl dist/*.tar.gz
 ```
 
 或先发 TestPyPI：
@@ -71,16 +71,16 @@ uv publish --publish-url https://test.pypi.org/legacy/ --token <TEST_TOKEN> dist
 ## 6. 发布后验证
 
 ```bash
-uvx dra@latest version
-uv tool install dra --force
+uvx --from dra-research dra version
+uv tool install dra-research --force
 dra doctor
 ```
 
 Windows：
 
 ```powershell
-uvx dra@latest version
-uv tool install dra --force
+uvx --from dra-research dra version
+uv tool install dra-research --force
 dra init
 dra doctor
 ```
