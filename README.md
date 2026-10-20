@@ -4,7 +4,7 @@
 
 它是一个**本地工具**：数据在你自己电脑上，不需要注册登录，也不需要有人维护服务器。你只需要准备两个 API Key（模型 + 搜索）。
 
-当前版本：**0.3.0**。
+当前版本：**0.4.0**。
 - 目标架构与接口：`MVP/PROJECT.md`（v1.2）
 - 本版范围与验收：`MVP/MVP-0.2.md`
 - 后续路线：`MVP/ROADMAP.md`
@@ -119,6 +119,20 @@ dra init
 Linux / macOS 同理。想让设置长期生效，把这两行写进 PowerShell profile（或 shell 的 rc 文件）。
 `dra doctor` 会显示它实际读到的是哪个配置路径。
 
+## 本地知识库
+
+```bash
+dra kb import --limit 10      # 把已有报告批量入库（只花 embedding）
+dra kb list                   # 文档 / 块数 / 是否已向量化
+dra kb search "向量数据库 QPS 延迟"
+dra kb show 1                 # 看某份报告的分块
+```
+
+- 存储是一个本地 `kb.sqlite3`，不引向量数据库。
+- 中文检索用字 bigram 的 BM25，配合向量余弦与 RRF。
+- **不调用 Tavily**；没有模型 Key 时自动退化为纯关键词检索。
+- 同一份报告按内容哈希去重，重复导入不重复计费。
+
 ## 本地界面
 
 ```bash
@@ -137,6 +151,8 @@ dra ui
 | `dra doctor` | 8 项自检：配置、密钥、端点、对话、向量、检索、数据目录 |
 | `dra run "<主题>"` | 发起研究；`--max-sources` / `--max-seconds` / `--max-tool-calls` / `--max-rounds` 控预算 |
 | `dra ui` | 打开本地界面（127.0.0.1，自动开浏览器） |
+| `dra kb add/import` | 把报告导入本地知识库（不消耗搜索额度） |
+| `dra kb search "查询"` | 关键词 + 向量混合检索（RRF 融合） |
 | `dra show <run_id>` | 看报告；`--trace` 看完整事件时间线 |
 | `dra list` | 列出历史研究 |
 | `dra version` | 版本号 |
@@ -205,7 +221,7 @@ dra ui
 ## 测试
 
 ```bash
-uv run pytest                          # 65 个离线单测，约 2s
+uv run pytest                          # 71 个离线单测，约 2s
 DRA_LIVE=1 uv run pytest -m live       # 真实链路 smoke（会花钱）
 ```
 
