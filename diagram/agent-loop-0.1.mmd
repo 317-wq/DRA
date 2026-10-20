@@ -1,0 +1,23 @@
+%% MVP 0.1 实际执行循环（与 PROJECT.md 的目标架构不同：这里只画已实现的部分）
+flowchart TD
+    T[研究主题] --> P[Plan 拆题<br/>3–5 个子问题 + 检索式]
+    P --> S[Search<br/>Tavily 并发 4]
+    S --> R[Read<br/>Extract 批量取正文<br/>失败降级原始抓取]
+    R --> E[登记证据<br/>URL 归一化去重 → 编号]
+    E --> A[Analyze<br/>要点 + 引用编号 + 覆盖度]
+    A --> Q{全部 enough？}
+    Q -- 是 --> W[Write 成稿]
+    Q -- 否 --> B{预算未尽？}
+    B -- 否 --> W
+    B -- 是 --> RP[Replan<br/>为 gap 补 1–2 条检索式]
+    RP --> S
+    W --> C[引用注入并重排<br/>无效编号丢弃]
+    C --> V[链接复核<br/>link_status 写入 sources.json]
+    V --> O[(report.md / sources.json<br/>subquestions.json / trace.jsonl)]
+
+    P -.事件.-> BUS[(EventBus)]
+    S -.事件.-> BUS
+    R -.事件.-> BUS
+    A -.事件.-> BUS
+    W -.事件.-> BUS
+    BUS -.SSE 预留.-> UI[CLI 实时面板<br/>0.2: Web]
