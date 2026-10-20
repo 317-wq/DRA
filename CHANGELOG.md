@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1 — 2026-10-21
+
+- PyPI 发行名改为 `dra-research`（`dra` 已被占用），命令仍为 `dra`
+- 修复 Release 误传 `dist/.gitignore` 的问题，只上传 wheel 与 sdist
+
 ## 1.0.0 — 2026-10-21
 
 首个正式发布：本地运行、BYOK、可安装可分发的深度研究代理。
