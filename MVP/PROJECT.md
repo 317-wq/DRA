@@ -1,6 +1,6 @@
 # PROJECT · 深度研究代理（Deep Research Agent）
 
-> 基线版本：v1.9
+> 基线版本：v1.10
 > 最后更新：2026-10-20
 > 说明：本文档只放跨版本稳定的内容（目标架构、技术原则、稳定接口）。
 > 版本范围、依赖与验收见对应的 `MVP-x.y.md`。
@@ -84,7 +84,9 @@
 - CLI 入口：`dra init` 配置、`dra doctor` 自检、`dra run "<主题>"` 发起研究、`dra show <run_id>` 查看报告与轨迹、`dra list` 列出历史 Run、`dra ui` 打开本地界面。
 - 本地界面：只监听 `127.0.0.1`，自动开浏览器；不提供远程访问、不做多用户。
 - HTTP 接口：`GET /`、`GET/POST /api/runs`、`GET /api/runs/{id}`、`/report`、`/sources`、`/trace`、`/events`（SSE）。
-- 任务模型：本地单用户、单任务；已有研究在跑时再次发起返回 409。
+- 任务模型：本地单用户、单 worker 串行；连续发起进入队列，运行中返回 409 仅用于严格互斥调用。
+- Run 状态：`queued / running / done / partial / failed / cancelled / interrupted`；重启时遗留的 queued/running 标记为 interrupted。
+- 管理接口：`GET /healthz`、分页 `GET /api/runs`、`DELETE /api/runs/{id}`、`/export`、`/cancel`、`/retry`、`GET/PUT /api/settings`。
 - 知识库：`dra kb add|import|list|search|show|remove`；存储为单个 `kb.sqlite3`（默认 `data_dir/kb.sqlite3`，可用 `DRA_KB_PATH` 覆盖）。
 - 检索契约：关键词 BM25 + 向量余弦，RRF 融合；无 Key 时退化为纯关键词，不阻塞。
 - 知识库接口：`GET /api/kb`、`GET /api/kb/search`、`POST /api/kb/sink`、`DELETE /api/kb/{doc_id}`；沉淀与检索只调用 embedding。
@@ -127,6 +129,7 @@
 |---|---|---|
 | v1.0 | 2026-10-20 | 初版：从架构图与 `5.html` 原型提取目标架构、技术原则与稳定接口 |
 | v1.1 | 2026-10-20 | 模型适配层增加思考开关（默认关闭）：单次研究 245s → 70s，三角色默认 `qwen3.8-max`；报告收尾对引用 URL 做可达性复核（`link_status`） |
+| v1.10 | 2026-10-21 | 后端加固：任务队列、取消、重试、重启恢复、原子写、管理 API 与设置读写 |
 | v1.9 | 2026-10-21 | 1.0 发布基线：PyPI 元数据、MIT License、Release 工作流、安装与升级文档 |
 | v1.8 | 2026-10-21 | 写作数字约束 + 写后核验/校对/验收闸门；自动生成 eval.json |
 | v1.7 | 2026-10-21 | 新增证据质量：来源分级、引用/数字核验评估、基线；提示词标注来源等级 |
