@@ -19,6 +19,7 @@ from dra.jsonutil import JSONParseError, extract_json
 from dra.llm import LLMError, ModelAdapter
 from dra.models import ChatUsage, RunResult, Source, SubQuestion
 from dra.prompts import analyze_messages, plan_messages, replan_messages, write_messages
+from dra.quality import assess_source
 from dra.store import Run, RunStore
 from dra.tools import Reader, SearchHit, TavilySearch, ToolError, canonicalize, domain_of
 from dra.trace import EventBus, TraceWriter, now_iso
@@ -123,6 +124,7 @@ class RunContext:
                 src.subquestion_ids.append(subq_id)
             return None
         n = len(self.sources) + 1
+        quality = assess_source(domain=domain_of(canon), content=content, published_at=published_at)
         src = Source(
             n=n,
             url=canon,
@@ -135,6 +137,9 @@ class RunContext:
             queries=[query] if query else [],
             subquestion_ids=[subq_id],
             via=via,
+            tier=quality["tier"],
+            tier_label=quality["tier_label"],
+            quality=quality["score"],
         )
         self.sources.append(src)
         self._by_url[canon] = src
