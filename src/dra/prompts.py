@@ -151,7 +151,8 @@ def write_messages(
    ## 证据缺口与不确定性
 3. 每个事实性论断后用 [n] 标注来源；只能使用上面出现过的编号，不得新造编号。
 4. 不要输出 URL，不要输出"参考资料"章节（由程序生成）。
-5. 不要编造数字、日期、版本号；证据中没有的就不要写。
+5. 不要编造数字、日期、版本号。**所有具体数字必须逐字出现在给定证据摘录中**；
+   找不到就写"资料未给出具体数值"或改用定性表述，禁止自己换算、估算或四舍五入后再写。
 6. 覆盖度是 partial/gap 的部分，要明确写"本次检索的资料中未见…"或"缺少 X 维度的一手数据"；
    不要把"本次检索未覆盖"写成"行业不存在/完全空白"。
 7. 不要写"本文将……"这类开头，直接进入内容。"""
@@ -186,4 +187,44 @@ def followup_messages(
 2. 只使用上面给出的证据；每个事实性论断用 [n] 标注，编号只能来自上面。
 3. 证据不足时明确写"现有证据无法回答……"，并说明还缺什么；不要编造数字或结论。
 4. 不要输出"参考资料"章节，不要输出 URL。"""
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+def repair_messages(
+    topic: str,
+    draft: str,
+    unverified: list[dict],
+    sources: list[Source],
+) -> list[dict[str, str]]:
+    """构造“数字校对”提示词：只修数字，不改变结论与结构。"""
+    system = "你是研究报告的校对者。只修正数字与对应引用，不改变结论和结构。"
+    needed = {n for item in unverified for n in (item.get("cited") or [])}
+    evidence = []
+    for src in sources:
+        if src.n not in needed:
+            continue
+        evidence.append(f"[{src.n}] {src.title} | {src.domain}")
+        evidence.append((src.snippet or "")[:900])
+        evidence.append("")
+    items = []
+    for item in unverified[:12]:
+        items.append(
+            f"- 数字 {item['number']} 出现在句子：{item['sentence'][:100]}"
+            f"（引用 {item.get('cited') or '无'}）"
+        )
+    user = f"""研究主题：{topic}
+
+以下句子里的数字，没有在所引用的来源中找到：
+{chr(10).join(items)}
+
+这些来源的摘录（数字只能来自这里）：
+{chr(10).join(evidence)}
+
+请重写整篇报告：
+1. 保留原有章节结构与**全部 [n] 引用**；每个事实性句子仍必须带引用。
+2. 只改涉及上述数字的句子，其余文字尽量原样保留，输出长度不得明显短于原文。
+3. 数字必须逐字来自上面的来源摘录；找不到就删掉数字、保留句子与引用，
+   或把该句改成定性表述。
+4. 不要新增来源、不要新增编号、不要改变结论。
+5. 直接输出完整的 Markdown 正文，不要解释，不要输出"参考资料"。"""
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
