@@ -4,7 +4,7 @@
 
 它是一个**本地工具**：数据在你自己电脑上，不需要注册登录，也不需要有人维护服务器。你只需要准备两个 API Key（模型 + 搜索）。
 
-当前版本：**1.1.0**。
+当前版本：**1.2.0**。
 - 目标架构与接口：`MVP/PROJECT.md`（v1.9）
 - 本版范围与验收：`MVP/MVP-1.0.md`
 - 后续路线：`MVP/ROADMAP.md`
@@ -41,7 +41,12 @@ dra run "2026 年主流 Agent 记忆机制方案对比"
 > 如果提示 `dra` 找不到，把 `~/.local/bin`（Windows 是 `%USERPROFILE%\.local\bin`）加进 PATH，
 > 或执行 `uv tool update-shell` 后重开终端。
 
-### 方式 B：不安装，直接跑
+#### Windows 便携版（不装 Python）
+
+下载 Release 里的 `DRA-portable-win64.zip`，解压到可写目录，双击 `DRA.exe`。
+首次运行会弹配置窗口填两个 Key；数据都在同目录 `data/` 里，换机整个文件夹拷走。
+
+## 方式 B：不安装，直接跑
 
 ```bash
 uvx --from dra-research dra run "2026 年主流 Agent 记忆机制方案对比"
