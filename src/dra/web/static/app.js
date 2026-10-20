@@ -19,6 +19,7 @@ const state = {
   trace: [],
   meta: null,
   followups: [],
+  evalData: null,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -268,11 +269,12 @@ async function loadRun(runId, options = {}) {
   closeStream();
   state.runId = runId;
   state.coverage = {};
-  const [meta, sources, trace, followups] = await Promise.all([
+  const [meta, sources, trace, followups, evaluation] = await Promise.all([
     api(`/api/runs/${runId}`),
     api(`/api/runs/${runId}/sources`).catch(() => []),
     api(`/api/runs/${runId}/trace`).catch(() => []),
     api(`/api/runs/${runId}/followups`).catch(() => ({ items: [] })),
+    api(`/api/runs/${runId}/eval`).catch(() => null),
   ]);
   state.meta = meta;
   state.sourceList = sources;
@@ -350,6 +352,11 @@ function renderPanel() {
     return;
   }
 
+  if (state.tab === "quality") {
+    renderQuality();
+    return;
+  }
+
   if (state.tab === "followups") {
     renderFollowups();
     return;
@@ -371,6 +378,42 @@ function renderPanel() {
       <thead><tr><th>#</th><th>阶段</th><th>事件</th><th>详情</th><th>耗时</th></tr></thead>
       <tbody>${rows}</tbody></table>`;
   }
+}
+
+/* ---------------- quality ---------------- */
+function renderQuality() {
+  const panel = $("#panel");
+  const data = state.evalData;
+  if (!data) {
+    panel.innerHTML = `<div class="empty">这次运行还没有可评估的报告。</div>`;
+    return;
+  }
+  const gradeColor = { A: "#86efac", B: "#93c5fd", C: "#fcd34d", D: "#fca5a5" }[data.grade] || "#e4e9f0";
+  const warnings = (data.warnings || []).length
+    ? `<div class="warn-box">${data.warnings.map((w) => `· ${escapeHtml(w)}`).join("<br>")}</div>`
+    : "";
+  const unverified = (data.numbers.unverified || []).length
+    ? `<div class="unverified">${data.numbers.unverified.map((item) => `<div class="row">
+        <span class="num">${escapeHtml(item.number)}</span>
+        引用 ${escapeHtml((item.cited || []).join(",") || "无")} · ${escapeHtml(item.sentence)}
+      </div>`).join("")}</div>`
+    : `<div class="empty">所有抽检数字都能在引用来源中找到。</div>`;
+  panel.innerHTML = `
+    <div class="score-card">
+      <div class="big" style="color:${gradeColor}">${data.score}</div>
+      <div><div class="grade">等级 ${data.grade}</div></div>
+      <div class="meta">${data.sources.total} 篇来源 · ${data.sources.domains} 个域名<br>
+        ${escapeHtml(data.run_id)}</div>
+    </div>
+    <div class="metric-grid">
+      <div class="metric"><div class="k">引用覆盖</div><div class="v">${Math.round(data.citations.citation_rate * 100)}%</div></div>
+      <div class="metric"><div class="k">数字可核验</div><div class="v">${Math.round(data.numbers.support_rate * 100)}%</div></div>
+      <div class="metric"><div class="k">一手来源占比</div><div class="v">${Math.round(data.sources.tier_avg * 100)}%</div></div>
+      <div class="metric"><div class="k">无效引用</div><div class="v">${data.citations.invalid}</div></div>
+    </div>
+    ${warnings}
+    <div class="sec">未在引用来源中找到的数字</div>
+    ${unverified}`;
 }
 
 /* ---------------- follow-ups ---------------- */
@@ -524,6 +567,7 @@ function resetView() {
   state.sourceList = [];
   state.meta = null;
   state.followups = [];
+  state.evalData = null;
   $("#topic").value = "";
   $("#logs").innerHTML = "";
   $("#hint").textContent = "Agent 会自动拆题、检索、交叉验证，并生成带引用的报告。";
