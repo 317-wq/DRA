@@ -1,0 +1,13 @@
+%% 0.2 的目标：陌生人把项目拉下来后，不碰代码就能跑出第一份报告
+flowchart LR
+    A["git clone / uv tool install"] --> B["dra init"]
+    B --> C{"写入 config.toml<br/>权限 0600"}
+    C --> D["dra doctor<br/>8 项自检"]
+    D -- "关键项失败" --> E["按提示修 Key / 端点"]
+    E --> D
+    D -- "全部通过" --> F["dra run 主题"]
+    F --> G[("runs/&lt;id&gt;/<br/>report.md · sources.json")]
+    F -. 事件 .-> H["trace.jsonl"]
+    C -. 配置优先级 .-> I["参数 &gt; 环境变量 &gt;<br/>config.toml &gt; .env"]
+    style C fill:#1f2d3d,stroke:#3b82f6,color:#e4e9f0
+    style D fill:#1f2d3d,stroke:#3b82f6,color:#e4e9f0
