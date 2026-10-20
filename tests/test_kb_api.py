@@ -17,7 +17,7 @@ class FakeAdapter:
 
 
 class FakeAgent:
-    def run(self, topic, *, budget=None, max_sources=12, on_event=None, run=None):
+    def run(self, topic, *, budget=None, max_sources=12, on_event=None, run=None, cancel_event=None):
         return None
 
 
