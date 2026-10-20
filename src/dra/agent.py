@@ -29,10 +29,36 @@ PER_QUESTION_SOURCES = 3
 SEARCH_RESULTS = 6
 
 
-def clean_text(text: str, limit: int = SNIPPET_CHARS) -> str:
-    """压缩空白并截取前 N 字，作为证据摘要。"""
-    text = re.sub(r"\s+", " ", text or "").strip()
-    return text[:limit]
+_NUMERIC = re.compile(r"\d+(?:\.\d+)?\s*(?:%|ms|QPS|qps|recall|accuracy|倍|万|亿|GB|MB|tok)")
+_QUANT_KEYS = (
+    "benchmark", "latency", "qps", "recall", "throughput", "cost",
+    "p95", "p99", "table", "延迟", "成本", "召回", "基准", "吞吐",
+)
+
+
+def best_excerpt(text: str, limit: int = SNIPPET_CHARS) -> str:
+    """从正文里挑“数字和指标最密”的一段，而不是永远取开头。
+
+    基准测试的数字通常在中后段的表格里；只取前 N 字会让分析模型看不到量化证据。
+    """
+    body = re.sub(r"[ \t]+", " ", text or "")
+    body = re.sub(r"\n{3,}", "\n\n", body).strip()
+    if len(body) <= limit:
+        return body
+
+    stride = max(200, limit // 2)
+    best_score, best_pos = -1, 0
+    for pos in range(0, len(body) - limit + 1, stride):
+        window = body[pos : pos + limit]
+        score = len(re.findall(r"\d", window))
+        score += 4 * len(_NUMERIC.findall(window))
+        score += 2 * sum(window.lower().count(key) for key in _QUANT_KEYS)
+        if score > best_score:
+            best_score, best_pos = score, pos
+
+    if best_pos == 0:
+        return body[:limit]
+    return "…" + body[best_pos : best_pos + limit]
 
 
 def per_question_quota(remaining: int, targets_left: int, cap: int = PER_QUESTION_SOURCES) -> int:
@@ -91,7 +117,7 @@ class RunContext:
             title=(title or canon)[:300],
             domain=domain_of(canon),
             published_at=published_at,
-            snippet=clean_text(content),
+            snippet=best_excerpt(content),
             chars=len(content or ""),
             fetched_at=now_iso(),
             queries=[query] if query else [],
@@ -676,4 +702,4 @@ class ResearchAgent:
         ctx.run.write_json("subquestions.json", [sq.model_dump() for sq in subquestions])
 
 
-__all__ = ["ResearchAgent", "RunContext", "clean_text"]
+__all__ = ["ResearchAgent", "RunContext", "best_excerpt"]
