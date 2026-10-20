@@ -1,6 +1,6 @@
 # PROJECT · 深度研究代理（Deep Research Agent）
 
-> 基线版本：v1.10
+> 基线版本：v1.11
 > 最后更新：2026-10-20
 > 说明：本文档只放跨版本稳定的内容（目标架构、技术原则、稳定接口）。
 > 版本范围、依赖与验收见对应的 `MVP-x.y.md`。
@@ -97,6 +97,8 @@
 - 写作约束：具体数字必须逐字来自证据；写后本地核验，低于 `DRA_MIN_NUMBER_SUPPORT`（默认 0.75）
   时带证据校对一次；修复稿需同时满足“可核验率 +5pp、引用 ≥60%、长度 ≥60%”才采纳，否则保留原稿。
 - 安装与分发：PyPI 发行名 `dra-research`、命令 `dra`（`uv tool install dra-research` / `uvx --from dra-research dra`）为主，GitHub Release 为备；安装后不依赖仓库目录，配置与数据都在用户目录。
+- 桌面形态：`dra.desktop` 启动本地服务 + Tk 控制窗口；PyInstaller 打成 Windows 便携版，
+  配置与数据固定在 exe 同级 `data/`；Release 的 `portable-windows` job 产出 zip。
 - 发布流程：`v*` tag 触发 `.github/workflows/release.yml`；版本号目前需同步 `pyproject.toml` 与 `src/dra/__init__.py`，清单见 `RELEASE.md`。
 - 配置优先级：初始化参数 > 环境变量（`DRA_*`，兼容 `QWEN_*` / `TAVILY_*`）> 用户 `config.toml` > 项目 `.env` > 默认值。
 - 模型服务：任意 OpenAI 兼容端点；`model` 为主模型，`fallback_models` 为降级链，某个模型不可用时按序切换。
@@ -129,6 +131,7 @@
 |---|---|---|
 | v1.0 | 2026-10-20 | 初版：从架构图与 `5.html` 原型提取目标架构、技术原则与稳定接口 |
 | v1.1 | 2026-10-20 | 模型适配层增加思考开关（默认关闭）：单次研究 245s → 70s，三角色默认 `qwen3.8-max`；报告收尾对引用 URL 做可达性复核（`link_status`） |
+| v1.11 | 2026-10-21 | 桌面便携版：desktop 入口、Tk 控制窗口、PyInstaller 打包与 Release 自动构建 |
 | v1.10 | 2026-10-21 | 后端加固：任务队列、取消、重试、重启恢复、原子写、管理 API 与设置读写 |
 | v1.9 | 2026-10-21 | 1.0 发布基线：PyPI 元数据、MIT License、Release 工作流、安装与升级文档 |
 | v1.8 | 2026-10-21 | 写作数字约束 + 写后核验/校对/验收闸门；自动生成 eval.json |
