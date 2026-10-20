@@ -20,6 +20,8 @@ def plan_messages(topic: str, n: int = 4) -> list[dict[str, str]]:
 4. id 从 1 开始连续编号。
 5. 涉及性能、成本、对比、安全、争议的子问题，至少给一条指向一手来源的检索式：
    用 `site:arxiv.org`、`site:github.com`，或该领域官方文档域名。不要只给"对比/推荐/2026"。
+6. 量化/基准类子问题再补一条指向基准项目的检索式：ANN-Benchmarks、VectorDBBench，
+   或厂商官方 benchmark 文档（如 `docs.weaviate.io/weaviate/benchmarks`、`qdrant.tech/benchmarks`）。
 
 只输出 JSON：
 {{"subquestions":[{{"id":1,"question":"...","queries":["...","..."]}}]}}"""
@@ -60,6 +62,8 @@ def analyze_messages(
 - key_points：2-4 条要点，每条一句话，必须带 [n] 引用；没有证据支撑的推断不要写。
 - evidence_ns：用到的证据编号列表。
 - coverage：enough（足以支撑该子问题的核心结论）/ partial（有信息但缺关键维度）/ gap（几乎没有可用信息）。
+  enough 不要求"存在一张统一对比表"：两个以上独立来源覆盖核心维度、且给出具体数值或事实，就判 enough；
+  只有核心维度仍然缺数值（例如全是定性描述）时才判 partial。
 - gap：coverage 不是 enough 时，用一句话说明还缺什么（缺哪类来源或哪个维度）。
   只描述本次证据："本次检索到的资料中未见……"，禁止写"行业完全空白/没有研究"这类绝对判断。
 
@@ -86,8 +90,8 @@ def replan_messages(topic: str, gaps: list[SubQuestion]) -> list[dict[str, str]]
 {chr(10).join(lines)}
 
 为每个子问题补 1-2 条**新的**检索式（必须与已有检索式不同），按缺口类型来换：
-- 缺量化/基准/延迟/成本 → 用具体基准名（LongMemEval、LOCOMO、ANN-benchmarks 等），
-  或 `site:arxiv.org`、`site:github.com`、`site:ann-benchmarks.com`；
+- 缺量化/基准/延迟/成本 → 用具体基准名（LongMemEval、LOCOMO、ANN-Benchmarks、VectorDBBench 等），
+  或 `site:arxiv.org`、`site:github.com`、官方 benchmark 文档域名；
 - 缺正文/只有标题 → 换官方文档 `site:docs.<厂商>.com` 或 `site:github.com` 仓库 README；
 - 缺争议/监管 → `site:gov.cn`、`site:arxiv.org` 或行业媒体。
 不要只改年份或重复已有检索式。
