@@ -61,8 +61,8 @@ wheels = [
 ]
 
 [[package]]
-name = "dra"
-version = "1.0.0"
+name = "dra-research"
+version = "1.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
