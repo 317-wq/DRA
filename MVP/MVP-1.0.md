@@ -3,7 +3,7 @@
 > 基线：PROJECT.md v1.9
 > 前置版本：MVP-0.8（质量约束）
 > 日期：2026-10-21
-> 状态：**代码与流程已完成**；PyPI 首次发布需要你在 PyPI/GitHub 上点一次授权
+> 状态：**v1.0.0 的 GitHub Release 已成功**；PyPI 因 `dra` 名称被占用，1.0.1 改用发行名 `dra-research`
 
 ## 1. 本版范围
 
@@ -54,8 +54,8 @@
 - [x] wheel 内含 LICENSE
 - [x] `uv tool install dist/dra-1.0.0-py3-none-any.whl` 后 `dra version` 输出 1.0.0
 - [x] `uvx --from dist/...whl dra version` 可用
-- [ ] GitHub Actions release workflow 实跑（需要你 push tag）
-- [ ] PyPI Trusted Publisher 配置并首次发布（需要你在 PyPI 操作）
+- [x] GitHub Actions release workflow 实跑（v1.0.0 已产出 Release）
+- [ ] PyPI Trusted Publisher 配置并首次发布 `dra-research`
 
 ## 6. 本版风险与待办
 
@@ -73,3 +73,5 @@
 | 从 wheel 安装 | `dra version` → `dra 1.0.0` |
 | 单测 | 90 个通过 |
 | CI | 增加 `uv build` 步骤 |
+| v1.0.0 Release | GitHub Actions 成功，资产含 wheel 与 sdist |
+| PyPI 名称 | `dra`、`deep-research-agent` 已被占用 → 1.0.1 改为 `dra-research` |
