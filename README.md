@@ -4,7 +4,7 @@
 
 它是一个**本地工具**：数据在你自己电脑上，不需要注册登录，也不需要有人维护服务器。你只需要准备两个 API Key（模型 + 搜索）。
 
-当前版本：**0.2.0**。
+当前版本：**0.3.0**。
 - 目标架构与接口：`MVP/PROJECT.md`（v1.2）
 - 本版范围与验收：`MVP/MVP-0.2.md`
 - 后续路线：`MVP/ROADMAP.md`
@@ -119,6 +119,16 @@ dra init
 Linux / macOS 同理。想让设置长期生效，把这两行写进 PowerShell profile（或 shell 的 rc 文件）。
 `dra doctor` 会显示它实际读到的是哪个配置路径。
 
+## 本地界面
+
+```bash
+dra ui
+```
+
+只在 `127.0.0.1` 起服务并自动开浏览器。页面里能发起研究、看实时阶段与事件流，结束后切报告 / 来源 / 轨迹；左侧历史可回放任意一次 run。刷新页面不会丢进度——事件流直接读 `runs/<id>/trace.jsonl`。
+
+> 不做远程访问、不做多用户；一次只跑一个研究。
+
 ## 命令
 
 | 命令 | 作用 |
@@ -126,6 +136,7 @@ Linux / macOS 同理。想让设置长期生效，把这两行写进 PowerShell 
 | `dra init` | 生成/更新配置（`--yes` 非交互，`--force` 覆盖） |
 | `dra doctor` | 8 项自检：配置、密钥、端点、对话、向量、检索、数据目录 |
 | `dra run "<主题>"` | 发起研究；`--max-sources` / `--max-seconds` / `--max-tool-calls` / `--max-rounds` 控预算 |
+| `dra ui` | 打开本地界面（127.0.0.1，自动开浏览器） |
 | `dra show <run_id>` | 看报告；`--trace` 看完整事件时间线 |
 | `dra list` | 列出历史研究 |
 | `dra version` | 版本号 |
@@ -194,7 +205,7 @@ Linux / macOS 同理。想让设置长期生效，把这两行写进 PowerShell 
 ## 测试
 
 ```bash
-uv run pytest                          # 47 个离线单测，约 2s
+uv run pytest                          # 65 个离线单测，约 2s
 DRA_LIVE=1 uv run pytest -m live       # 真实链路 smoke（会花钱）
 ```
 
