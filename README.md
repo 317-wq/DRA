@@ -106,6 +106,19 @@ runs_dir = "/home/you/.local/share/dra/runs"
 - **换供应商**：只要兼容 OpenAI 接口，改 `base_url` / `model` / `api_key` 即可（DeepSeek、OpenAI、自建代理、Ollama 都行）。
 - **降级链**：`fallback_models` 里的模型会在主模型不可用（额度耗尽 / 不存在 / 429）时按序接管。
 
+### 配置目录不可写时（便携模式）
+
+有的机器（公司策略、杀软、或在受限终端里）不允许写 `%APPDATA%`。把配置和数据指到可写目录即可：
+
+```powershell
+$env:DRA_CONFIG_FILE = "$PWD\config.toml"
+$env:DRA_DATA_DIR    = "$PWD\data"
+dra init
+```
+
+Linux / macOS 同理。想让设置长期生效，把这两行写进 PowerShell profile（或 shell 的 rc 文件）。
+`dra doctor` 会显示它实际读到的是哪个配置路径。
+
 ## 命令
 
 | 命令 | 作用 |
