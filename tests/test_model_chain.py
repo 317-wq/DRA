@@ -6,10 +6,9 @@ from dra.llm import ModelUnavailable, is_model_level_error
 
 def test_model_chain_starts_with_primary_and_dedupes():
     settings = Settings(
-        qwen_chat_model_1="m-a",
-        qwen_chat_model_2="m-b",
-        qwen_chat_model_3="m-a",
-        qwen_chat_model_4="",
+        model="m-a",
+        fallback_models=["m-b", "m-a", ""],
+        _env_file=None,
     )
     chain = settings.model_chain("m-b")
     assert chain[0] == "m-b"
@@ -18,9 +17,17 @@ def test_model_chain_starts_with_primary_and_dedupes():
     assert len(chain) == len(set(chain))
 
 
-def test_all_models_are_ordered():
-    settings = Settings(qwen_chat_model_1="x", qwen_chat_model_2="y")
-    assert settings.all_models[:2] == ["x", "y"]
+def test_all_models_keep_order():
+    settings = Settings(model="x", fallback_models=["y", "z"], _env_file=None)
+    assert settings.all_models == ["x", "y", "z"]
+
+
+def test_role_models_fall_back_to_default():
+    settings = Settings(model="base", plan_model="", _env_file=None)
+    assert settings.plan_model_resolved == "base"
+    assert settings.analyze_model_resolved == "base"
+    assert settings.write_model_resolved == "base"
+    assert Settings(model="base", write_model="w", _env_file=None).write_model_resolved == "w"
 
 
 def test_model_level_error_detection():
