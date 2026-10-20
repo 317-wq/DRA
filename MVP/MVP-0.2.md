@@ -86,3 +86,4 @@
 | 首次运行（缺 Key） | 输出 `dra init` 引导，无堆栈 |
 | `uv build` | 产出 `dra-0.2.0-py3-none-any.whl`，含 18 个模块 |
 | `uv tool install` | `~/.local/bin/dra version` → `dra 0.2.0`，`dra list` 能读到配置目录 |
+| 0.2.1（Windows 实测修复） | `%APPDATA%` 不可写时不再抛堆栈，改为提示设置 `DRA_CONFIG_FILE` / `DRA_DATA_DIR`；配置目录改用 Roaming；项目内便携模式验证可写 |
