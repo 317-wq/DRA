@@ -47,8 +47,12 @@ def best_excerpt(text: str, limit: int = SNIPPET_CHARS) -> str:
         return body
 
     stride = max(200, limit // 2)
+    last = len(body) - limit
+    positions = list(range(0, last + 1, stride))
+    if positions[-1] != last:
+        positions.append(last)  # 结尾的短表格很容易被步长跳过
     best_score, best_pos = -1, 0
-    for pos in range(0, len(body) - limit + 1, stride):
+    for pos in positions:
         window = body[pos : pos + limit]
         score = len(re.findall(r"\d", window))
         score += 4 * len(_NUMERIC.findall(window))
