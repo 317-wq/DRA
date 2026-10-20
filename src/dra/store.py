@@ -1,9 +1,15 @@
-"""Run 产物存储：runs/<run_id>/{run.json, report.md, sources.json, trace.jsonl, sources/*.md}"""
+"""Run 产物存储：原子写入、分页列表、删除。
+
+文件布局保持 `runs/<run_id>/...`，方便直接看、直接备份；
+所有 JSON/文本写入先落临时文件再 `os.replace`，避免读到半截内容。
+"""
 
 from __future__ import annotations
 
 import json
+import os
 import secrets
+import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -23,22 +29,20 @@ class Run:
         return p
 
     def write_text(self, name: str, text: str) -> Path:
-        """写文本产物。"""
+        """原子写文本产物（临时文件 + os.replace）。"""
         p = self.path(name)
-        p.write_text(text, encoding="utf-8")
+        tmp = p.with_name(f".{p.name}.{os.getpid()}.tmp")
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, p)
         return p
 
     def write_json(self, name: str, data: Any) -> Path:
-        """写 JSON 产物（UTF-8、缩进 2）。"""
-        p = self.path(name)
-        p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        return p
+        """原子写 JSON 产物。"""
+        return self.write_text(name, json.dumps(data, ensure_ascii=False, indent=2))
 
     def save_source(self, n: int, content: str) -> Path:
         """保存单篇来源正文快照。"""
-        p = self.path("sources", f"{n:03d}.md")
-        p.write_text(content, encoding="utf-8")
-        return p
+        return self.write_text(f"sources/{n:03d}.md", content)
 
     @property
     def report_path(self) -> Path:
@@ -79,14 +83,38 @@ class RunStore:
                 pass
         return Run(id=run_id, dir=run_dir, topic=topic)
 
-    def list(self) -> list[dict]:
-        """列出全部 run 的元数据（新的在前）。"""
+    def list(
+        self,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+        status: str | None = None,
+    ) -> list[dict]:
+        """列出 run 元数据（新的在前），支持分页与状态过滤。"""
         items: list[dict] = []
         for meta in sorted(self.root.glob("*/run.json"), reverse=True):
             try:
                 data = json.loads(meta.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, OSError):
                 continue
             data["run_id"] = meta.parent.name
+            if status and data.get("status") != status:
+                continue
             items.append(data)
+        if offset:
+            items = items[offset:]
+        if limit is not None:
+            items = items[:limit]
         return items
+
+    def count(self, status: str | None = None) -> int:
+        """统计 run 数量。"""
+        return len(self.list(status=status))
+
+    def delete(self, run_id: str) -> bool:
+        """删除整个 run 目录；不存在返回 False。"""
+        run_dir = self.root / run_id
+        if not run_dir.is_dir():
+            return False
+        shutil.rmtree(run_dir)
+        return True
