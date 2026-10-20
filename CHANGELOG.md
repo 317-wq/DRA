@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.0 — 2026-10-21
+
+- 后端加固：任务队列、取消、重试、重启恢复、原子写
+- 管理 API：分页、删除、导出 MD/HTML、健康检查、设置读写
+- CLI：`dra delete`、`dra export`；界面：取消 / 重试 / 删除 / 导出
+- 修复：`config.toml` 的 model 被旧 `QWEN_*` 别名覆盖
+
 ## 1.0.1 — 2026-10-21
 
 - PyPI 发行名改为 `dra-research`（`dra` 已被占用），命令仍为 `dra`
