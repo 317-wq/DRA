@@ -102,9 +102,10 @@ class FakeReader:
 
 def build_agent(tmp_path, writer_cites="[1]"):
     settings = Settings(
-        qwen_api_key="test-key",
+        api_key="test-key",
         tavily_api_key="test-key",
         runs_dir=tmp_path,
+        _env_file=None,
     )
     llm = FakeLLM(writer_cites=writer_cites)
     return ResearchAgent(
