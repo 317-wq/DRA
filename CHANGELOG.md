@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0 — 2026-10-21
+
+- Windows 便携版：PyInstaller 打包，不依赖 Python/uv
+- 桌面控制窗口：打开界面 / 退出；首次运行配置向导
+- 数据固定在 exe 同级 `data/`；Release 自动构建 portable zip
+
 ## 1.1.0 — 2026-10-21
 
 - 后端加固：任务队列、取消、重试、重启恢复、原子写
