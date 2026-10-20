@@ -16,12 +16,13 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from markdown_it import MarkdownIt
 from pydantic import BaseModel, Field
 
-from dra.config import Settings
+from dra import __version__
+from dra.config import Settings, config_path, load_toml, write_toml_config
 from dra.evaluate import evaluate_run
 from dra.followup import FollowupEngine
 from dra.jobs import BusyError, RunManager, read_all_events, read_new_events
@@ -43,6 +44,16 @@ class SinkRequest(BaseModel):
 class FollowupRequest(BaseModel):
     question: str = Field(min_length=1, max_length=300)
     k: int = Field(default=6, ge=1, le=12)
+
+
+class SettingsPatch(BaseModel):
+    base_url: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+    fallback_models: list[str] | None = None
+    tavily_api_key: str | None = None
+    embedding_model: str | None = None
+    min_number_support: float | None = Field(default=None, ge=0, le=1)
 
 
 def _static_dir() -> Path:
@@ -77,9 +88,31 @@ def create_app(
     def index() -> FileResponse:
         return FileResponse(static_dir / "index.html")
 
+    @app.get("/healthz")
+    def healthz() -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "version": __version__,
+            "active": manager.active_run(),
+            "queued": manager.queue_size(),
+            "runs": manager.store.count(),
+        }
+
     @app.get("/api/runs")
-    def list_runs() -> dict[str, Any]:
-        return {"runs": manager.store.list(), "active": manager.active_run()}
+    def list_runs(
+        limit: int = 50,
+        offset: int = 0,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        limit = max(1, min(limit, 200))
+        offset = max(0, offset)
+        items = manager.store.list(limit=limit, offset=offset, status=status)
+        return {
+            "runs": items,
+            "total": manager.store.count(status=status),
+            "active": manager.active_run(),
+            "queued": manager.queue_size(),
+        }
 
     @app.post("/api/runs", status_code=202)
     def start_run(body: StartRequest) -> dict[str, str]:
@@ -94,7 +127,36 @@ def create_app(
         run_or_404(run_id)
         meta = manager.meta(run_id)
         meta["running"] = manager.is_running(run_id)
+        meta["queued"] = meta.get("status") == "queued"
         return meta
+
+    @app.post("/api/runs/{run_id}/cancel", status_code=202)
+    def cancel_run(run_id: str) -> dict[str, str]:
+        run_or_404(run_id)
+        result = manager.cancel(run_id)
+        if result == "unknown":
+            raise HTTPException(status_code=404, detail="run 不存在")
+        return {"result": result}
+
+    @app.post("/api/runs/{run_id}/retry", status_code=202)
+    def retry_run(run_id: str) -> dict[str, str]:
+        run_or_404(run_id)
+        try:
+            new_id = manager.retry(run_id)
+        except BusyError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"run_id": new_id}
+
+    @app.delete("/api/runs/{run_id}")
+    def delete_run(run_id: str) -> dict[str, bool]:
+        run_or_404(run_id)
+        try:
+            removed = manager.delete(run_id)
+        except BusyError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"removed": removed}
 
     @app.get("/api/runs/{run_id}/report")
     def run_report(run_id: str, format: str = "html") -> HTMLResponse:
@@ -106,6 +168,35 @@ def create_app(
         if format == "md":
             return HTMLResponse(f"<pre>{text}</pre>", media_type="text/html; charset=utf-8")
         return HTMLResponse(markdown.render(text), media_type="text/html; charset=utf-8")
+
+    @app.get("/api/runs/{run_id}/export")
+    def export_report(run_id: str, format: str = "md") -> Response:
+        run = run_or_404(run_id)
+        path = run.dir / "report.md"
+        if not path.exists():
+            raise HTTPException(status_code=404, detail="报告还没生成")
+        text = path.read_text(encoding="utf-8")
+        if format == "html":
+            body = markdown.render(text)
+            html = (
+                "<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
+                f"<title>{run.topic or run_id}</title>"
+                "<style>body{max-width:900px;margin:40px auto;padding:0 20px;"
+                "font:16px/1.8 -apple-system,'Segoe UI','PingFang SC',sans-serif;color:#222}"
+                "table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:6px}"
+                "a{color:#2563eb}</style></head><body>"
+                f"{body}</body></html>"
+            )
+            return Response(
+                html,
+                media_type="text/html; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="{run_id}.html"'},
+            )
+        return Response(
+            text,
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{run_id}.md"'},
+        )
 
     @app.get("/api/runs/{run_id}/sources")
     def run_sources(run_id: str) -> list[dict[str, Any]]:
@@ -161,6 +252,30 @@ def create_app(
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="追问不存在") from exc
         return {"meta": meta, "answer": answer, "html": markdown.render(answer)}
+
+    @app.get("/api/settings")
+    def get_settings() -> dict[str, Any]:
+        current = Settings()
+        data = current.public_summary()
+        data["model"] = current.model
+        data["plan_model"] = current.plan_model_resolved
+        data["analyze_model"] = current.analyze_model_resolved
+        data["write_model"] = current.write_model_resolved
+        data["fallback_models"] = current.fallback_models
+        data["min_number_support"] = current.min_number_support
+        data["config_file"] = str(config_path())
+        data["restart_required_hint"] = "修改后新任务生效，已启动的服务需重启"
+        return data
+
+    @app.put("/api/settings")
+    def update_settings(body: SettingsPatch) -> dict[str, Any]:
+        values = load_toml()
+        patch = body.model_dump(exclude_none=True)
+        if not patch:
+            return {"updated": [], "path": str(config_path())}
+        values.update(patch)
+        path = write_toml_config(values)
+        return {"updated": sorted(patch), "path": str(path), "restart_required": True}
 
     @app.get("/api/kb")
     def kb_index() -> dict[str, Any]:
