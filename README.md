@@ -4,23 +4,26 @@
 
 它是一个**本地工具**：数据在你自己电脑上，不需要注册登录，也不需要有人维护服务器。你只需要准备两个 API Key（模型 + 搜索）。
 
-当前版本：**0.8.0**。
-- 目标架构与接口：`MVP/PROJECT.md`（v1.2）
-- 本版范围与验收：`MVP/MVP-0.2.md`
+当前版本：**1.0.0**。
+- 目标架构与接口：`MVP/PROJECT.md`（v1.9）
+- 本版范围与验收：`MVP/MVP-1.0.md`
 - 后续路线：`MVP/ROADMAP.md`
+- 发布流程：`RELEASE.md`
 
 ## 安装（使用者）
 
 需要 Python 3.12+ 和 [uv](https://docs.astral.sh/uv/)。uv 会顺手装好 Python，不用单独配环境。
 
+### 方式 A：安装成命令（推荐）
+
 macOS / Linux：
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv tool install git+https://github.com/317-wq/dra.git
+uv tool install dra          # 从 PyPI 安装
 
-dra init      # 选服务商、填两个 Key
-dra doctor    # 检查 Key、端点、检索是否真的能用
+dra init                     # 选服务商、填两个 Key
+dra doctor                   # 检查 Key、端点、检索是否真的能用
 dra run "2026 年主流 Agent 记忆机制方案对比"
 ```
 
@@ -28,23 +31,38 @@ Windows（PowerShell）：
 
 ```powershell
 powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-uv tool install git+https://github.com/317-wq/dra.git
+uv tool install dra
 
 dra init
 dra doctor
 dra run "2026 年主流 Agent 记忆机制方案对比"
 ```
 
-> Windows 需要先装 Git（uv 通过 git 拉取仓库）：`winget install --id Git.Git -e`。
-
 > 如果提示 `dra` 找不到，把 `~/.local/bin`（Windows 是 `%USERPROFILE%\.local\bin`）加进 PATH，
 > 或执行 `uv tool update-shell` 后重开终端。
 
-升级：
+### 方式 B：不安装，直接跑
 
 ```bash
-uv tool upgrade dra
+uvx dra run "2026 年主流 Agent 记忆机制方案对比"
 ```
+
+### 方式 C：从 GitHub 安装（PyPI 不可用时）
+
+```bash
+uv tool install git+https://github.com/317-wq/DRA.git
+```
+
+> Windows 从 GitHub 安装需要先装 Git：`winget install --id Git.Git -e`。
+
+### 升级与回滚
+
+```bash
+uv tool upgrade dra          # 升级到最新
+uv tool install dra==1.0.0 --force   # 回滚到指定版本
+```
+
+PyPI 发布状态见 <https://pypi.org/project/dra/>。维护者流程见 `RELEASE.md`。
 
 ## 在 Windows 上跑演示
 
@@ -64,7 +82,7 @@ dra run "2026 年主流 Agent 记忆机制方案对比" --max-sources 8
 ## 从源码运行（开发者）
 
 ```bash
-git clone https://github.com/317-wq/dra.git && cd dra
+git clone https://github.com/317-wq/DRA.git && cd DRA
 uv sync
 uv run dra init
 uv run dra doctor
