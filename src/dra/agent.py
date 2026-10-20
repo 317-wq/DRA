@@ -65,6 +65,13 @@ def best_excerpt(text: str, limit: int = SNIPPET_CHARS) -> str:
     return "…" + body[best_pos : best_pos + limit]
 
 
+def enough_supported(source_ns: list[int], sources: list[Source], min_domains: int = 2) -> bool:
+    """enough 至少要有两个独立域名，防止同一篇转载被当成多来源。"""
+    wanted = set(source_ns)
+    domains = {s.domain for s in sources if s.n in wanted}
+    return len(domains) >= min_domains
+
+
 def per_question_quota(remaining: int, targets_left: int, cap: int = PER_QUESTION_SOURCES) -> int:
     """把剩余来源名额均分给还没处理的子问题，避免前面的子问题吃光预算。"""
     if remaining <= 0 or targets_left <= 0:
@@ -535,6 +542,16 @@ class ResearchAgent:
             sq.source_ns = sorted({int(n) for n in (item.get("evidence_ns") or []) if n in valid_ns})
             if not sq.key_points and sq.coverage == "enough":
                 sq.coverage = "partial"
+
+        # 交叉来源校验：enough 不能只靠一个域名
+        for sq in subquestions:
+            if sq.coverage != "enough":
+                continue
+            ns = sq.source_ns or [s.n for s in ctx.sources if sq.id in s.subquestion_ids]
+            if not enough_supported(ns, ctx.sources):
+                sq.coverage = "partial"
+                sq.gap = sq.gap or "仅有单一域名来源，缺第二个独立来源交叉验证"
+                ctx.notes.append(f"子问题 {sq.id} 判为 enough，但来源域名不足 2 个，已降为 partial")
 
         self._emit_analysis(ctx, subquestions, round_no, res.usage.total_tokens)
 
