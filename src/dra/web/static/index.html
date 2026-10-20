@@ -17,6 +17,10 @@
       </div>
     </div>
     <button id="newBtn" class="new">＋ 新研究</button>
+    <nav class="nav">
+      <button class="nav-item active" data-view="research"><span>◧</span>研究</button>
+      <button class="nav-item" data-view="kb"><span>▤</span>知识库</button>
+    </nav>
     <div class="sec">历史</div>
     <div id="history" class="history"></div>
     <div class="side-foot">仅监听 127.0.0.1 · 数据在本地</div>
@@ -28,39 +32,53 @@
       <div id="runBadge" class="badge idle">就绪</div>
     </header>
 
-    <section class="composer">
-      <textarea id="topic" rows="2" placeholder="输入研究主题，例如：2026 年主流 Agent 记忆机制方案对比"></textarea>
-      <div class="controls">
-        <label>来源上限
-          <input id="maxSources" type="number" value="12" min="4" max="20">
-        </label>
-        <button id="startBtn" class="primary">开始研究</button>
-      </div>
-      <div class="hint" id="hint">Agent 会自动拆题、检索、交叉验证，并生成带引用的报告。</div>
-    </section>
+    <div id="view-research" class="view">
+      <section class="composer">
+        <textarea id="topic" rows="2" placeholder="输入研究主题，例如：2026 年主流 Agent 记忆机制方案对比"></textarea>
+        <div class="controls">
+          <label>来源上限
+            <input id="maxSources" type="number" value="12" min="4" max="20">
+          </label>
+          <button id="startBtn" class="primary">开始研究</button>
+        </div>
+        <div class="hint" id="hint">Agent 会自动拆题、检索、交叉验证，并生成带引用的报告。</div>
+      </section>
 
-    <section class="workspace">
-      <div class="flow">
-        <div class="stages" id="stages"></div>
-        <div class="logs-wrap">
-          <div class="logs-head">事件流</div>
-          <div class="logs" id="logs"></div>
+      <section class="workspace">
+        <div class="flow">
+          <div class="stages" id="stages"></div>
+          <div class="logs-wrap">
+            <div class="logs-head">事件流</div>
+            <div class="logs" id="logs"></div>
+          </div>
         </div>
-      </div>
 
-      <div class="result">
-        <div class="tabs">
-          <button class="tab active" data-tab="report">报告</button>
-          <button class="tab" data-tab="sources">来源</button>
-          <button class="tab" data-tab="trace">轨迹</button>
+        <div class="result">
+          <div class="tabs">
+            <button class="tab active" data-tab="report">报告</button>
+            <button class="tab" data-tab="sources">来源</button>
+            <button class="tab" data-tab="trace">轨迹</button>
+          </div>
+          <div id="panel" class="panel">
+            <div class="empty">还没有报告。输入主题开始一次研究。</div>
+          </div>
         </div>
-        <div id="panel" class="panel">
-          <div class="empty">还没有报告。输入主题开始一次研究。</div>
-        </div>
+      </section>
+    </div>
+
+    <div id="view-kb" class="view kb-view" hidden>
+      <div class="kb-toolbar">
+        <input id="kbQuery" placeholder="搜索知识库，例如：换电 成本 / 向量数据库 延迟">
+        <button id="kbSearchBtn" class="primary">搜索</button>
       </div>
-    </section>
+      <div class="kb-stats" id="kbStats"></div>
+      <div class="kb-results" id="kbResults"></div>
+      <div class="kb-docs-head">已入库文档</div>
+      <div class="kb-docs" id="kbDocs"></div>
+    </div>
   </main>
 </div>
+<div id="toast" class="toast"></div>
 <script src="/static/app.js"></script>
 </body>
 </html>
