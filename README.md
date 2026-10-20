@@ -4,7 +4,7 @@
 
 它是一个**本地工具**：数据在你自己电脑上，不需要注册登录，也不需要有人维护服务器。你只需要准备两个 API Key（模型 + 搜索）。
 
-当前版本：**0.5.0**。
+当前版本：**0.6.0**。
 - 目标架构与接口：`MVP/PROJECT.md`（v1.2）
 - 本版范围与验收：`MVP/MVP-0.2.md`
 - 后续路线：`MVP/ROADMAP.md`
@@ -119,6 +119,18 @@ dra init
 Linux / macOS 同理。想让设置长期生效，把这两行写进 PowerShell profile（或 shell 的 rc 文件）。
 `dra doctor` 会显示它实际读到的是哪个配置路径。
 
+## 追问
+
+```bash
+dra ask "那成本呢？" --run <run_id>
+```
+
+或直接 `dra ui` → 打开一次研究 → 「追问」tab。
+
+- 只复用父报告的证据，**默认不重新检索**，几乎不消耗搜索额度。
+- 引用沿用父报告编号（[3] 在两份文档里指同一来源）。
+- 证据不够时直接说“现有证据无法回答”，不会偷偷补搜或编造。
+
 ## 本地知识库
 
 ```bash
@@ -153,6 +165,7 @@ dra ui
 | `dra ui` | 打开本地界面（127.0.0.1，自动开浏览器） |
 | `dra kb add/import` | 把报告导入本地知识库（不消耗搜索额度） |
 | `dra kb search "查询"` | 关键词 + 向量混合检索（RRF 融合） |
+| `dra ask "问题" --run <id>` | 基于某次研究追问（默认不重新检索） |
 | `dra show <run_id>` | 看报告；`--trace` 看完整事件时间线 |
 | `dra list` | 列出历史研究 |
 | `dra version` | 版本号 |
@@ -221,7 +234,7 @@ dra ui
 ## 测试
 
 ```bash
-uv run pytest                          # 74 个离线单测，约 2s
+uv run pytest                          # 80 个离线单测，约 2s
 DRA_LIVE=1 uv run pytest -m live       # 真实链路 smoke（会花钱）
 ```
 
