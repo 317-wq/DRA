@@ -22,6 +22,7 @@ from markdown_it import MarkdownIt
 from pydantic import BaseModel, Field
 
 from dra.config import Settings
+from dra.followup import FollowupEngine
 from dra.jobs import BusyError, RunManager, read_all_events, read_new_events
 from dra.kb import KnowledgeBase
 from dra.llm import ModelAdapter
@@ -38,6 +39,11 @@ class SinkRequest(BaseModel):
     run_id: str = Field(min_length=8, max_length=32)
 
 
+class FollowupRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=300)
+    k: int = Field(default=6, ge=1, le=12)
+
+
 def _static_dir() -> Path:
     return Path(__file__).parent / "static"
 
@@ -46,11 +52,13 @@ def create_app(
     settings: Settings,
     manager: RunManager | None = None,
     kb_factory=None,
+    followup_factory=None,
 ) -> FastAPI:
     manager = manager or RunManager(settings)
     kb_factory = kb_factory or (
         lambda: KnowledgeBase(settings, adapter=ModelAdapter(settings))
     )
+    followup_factory = followup_factory or (lambda: FollowupEngine(settings, manager.store))
     static_dir = _static_dir()
     app = FastAPI(title="Deep Research Agent", docs_url=None, redoc_url=None, openapi_url=None)
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
@@ -113,6 +121,38 @@ def create_app(
     def run_trace(run_id: str) -> list[dict[str, Any]]:
         run = run_or_404(run_id)
         return read_all_events(run.trace_path)
+
+    @app.get("/api/runs/{run_id}/followups")
+    def list_followups(run_id: str) -> dict[str, Any]:
+        run_or_404(run_id)
+        engine = followup_factory()
+        return {"items": engine.list(run_id)}
+
+    @app.post("/api/runs/{run_id}/followups")
+    def ask_followup(run_id: str, body: FollowupRequest) -> dict[str, Any]:
+        run_or_404(run_id)
+        engine = followup_factory()
+        try:
+            result = engine.ask(run_id, body.question, k=body.k)
+        except (ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {
+            "id": result.followup_id,
+            "question": result.question,
+            "cited_ns": result.cited_ns,
+            "chars": result.chars,
+            "duration_s": result.duration_s,
+        }
+
+    @app.get("/api/runs/{run_id}/followups/{followup_id}")
+    def get_followup(run_id: str, followup_id: str) -> dict[str, Any]:
+        run_or_404(run_id)
+        engine = followup_factory()
+        try:
+            meta, answer = engine.get(run_id, followup_id)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="追问不存在") from exc
+        return {"meta": meta, "answer": answer, "html": markdown.render(answer)}
 
     @app.get("/api/kb")
     def kb_index() -> dict[str, Any]:
