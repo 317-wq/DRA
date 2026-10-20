@@ -26,7 +26,7 @@ from dra.verify import check_urls, is_ok
 
 SNIPPET_CHARS = 1200
 PER_QUESTION_SOURCES = 3
-SEARCH_RESULTS = 6
+SEARCH_RESULTS = 10
 
 
 _NUMERIC = re.compile(r"\d+(?:\.\d+)?\s*(?:%|ms|QPS|qps|recall|accuracy|倍|万|亿|GB|MB|tok)")
@@ -370,7 +370,9 @@ class ResearchAgent:
         for index, sq in enumerate(targets):
             quota = per_question_quota(remaining, len(targets) - index)
             if quota <= 0:
-                starved.append(sq.id)
+                # 只有这篇子问题一篇都没有时才值得告警；已有来源只是没补到新的
+                if not any(sq.id in src.subquestion_ids for src in ctx.sources):
+                    starved.append(sq.id)
                 continue
             bucket = sorted(per_sq.get(sq.id, {}).values(), key=lambda x: x[0].score, reverse=True)
             taken = 0
@@ -583,10 +585,13 @@ class ResearchAgent:
         gaps = [sq for sq in subquestions if sq.coverage != "enough" and sq.gap]
         if not gaps:
             return
+        counts = {
+            sq.id: sum(1 for src in ctx.sources if sq.id in src.subquestion_ids) for sq in gaps
+        }
         try:
             res = self._chat(
                 ctx,
-                replan_messages(ctx.topic, gaps),
+                replan_messages(ctx.topic, gaps, counts),
                 model=self.settings.plan_model_resolved,
                 max_tokens=3000,
                 json_mode=True,
