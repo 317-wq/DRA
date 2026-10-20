@@ -348,6 +348,17 @@ def list_runs() -> None:
 
 
 @app.command()
+def ui(
+    port: int = typer.Option(8765, "--port", help="起始端口（被占用会自动往后找）"),
+    no_browser: bool = typer.Option(False, "--no-browser", help="不自动打开浏览器"),
+) -> None:
+    """启动本地界面（只监听 127.0.0.1）。"""
+    from dra.web.server import serve
+
+    serve(Settings(), port=port, open_browser=not no_browser)
+
+
+@app.command()
 def version() -> None:
     """版本号。"""
     console.print(f"dra {__version__}")
