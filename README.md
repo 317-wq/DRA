@@ -17,7 +17,7 @@ macOS / Linux：
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv tool install git+https://github.com/<你的用户名>/dra.git
+uv tool install git+https://github.com/317-wq/dra.git
 
 dra init      # 选服务商、填两个 Key
 dra doctor    # 检查 Key、端点、检索是否真的能用
@@ -28,12 +28,14 @@ Windows（PowerShell）：
 
 ```powershell
 powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-uv tool install git+https://github.com/<你的用户名>/dra.git
+uv tool install git+https://github.com/317-wq/dra.git
 
 dra init
 dra doctor
 dra run "2026 年主流 Agent 记忆机制方案对比"
 ```
+
+> Windows 需要先装 Git（uv 通过 git 拉取仓库）：`winget install --id Git.Git -e`。
 
 > 如果提示 `dra` 找不到，把 `~/.local/bin`（Windows 是 `%USERPROFILE%\.local\bin`）加进 PATH，
 > 或执行 `uv tool update-shell` 后重开终端。
@@ -44,10 +46,25 @@ dra run "2026 年主流 Agent 记忆机制方案对比"
 uv tool upgrade dra
 ```
 
+## 在 Windows 上跑演示
+
+程序本身是跨平台的（CI 覆盖 `windows-latest`），Linux 只是这次的开发机。
+唯一有平台差异的是演示脚本，Windows 用 PowerShell 版：
+
+```powershell
+# 仓库目录内，依次跑三个主题
+powershell -ExecutionPolicy Bypass -File .\scripts\demo.ps1
+
+# 或安装后直接跑单个主题
+dra run "2026 年主流 Agent 记忆机制方案对比" --max-sources 8
+```
+
+产物在 `%LOCALAPPDATA%\dra\runs\`。建议用 Windows Terminal；旧版 cmd 的代码页可能让中文排版异常。
+
 ## 从源码运行（开发者）
 
 ```bash
-git clone <仓库地址> && cd dra
+git clone https://github.com/317-wq/dra.git && cd dra
 uv sync
 uv run dra init
 uv run dra doctor
