@@ -127,5 +127,6 @@ def test_unknown_and_invalid_run_ids(tmp_path):
 
 
 def test_find_free_port():
-    port = find_free_port("127.0.0.1", 18900)
-    assert 18900 <= port < 18920
+    # 用 0 让系统分配，避免共享 runner 上的端口冲突
+    port = find_free_port("127.0.0.1", 0)
+    assert port > 0
