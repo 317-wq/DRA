@@ -4,7 +4,7 @@
 
 它是一个**本地工具**：数据在你自己电脑上，不需要注册登录，也不需要有人维护服务器。你只需要准备两个 API Key（模型 + 搜索）。
 
-当前版本：**0.6.0**。
+当前版本：**0.7.0**。
 - 目标架构与接口：`MVP/PROJECT.md`（v1.2）
 - 本版范围与验收：`MVP/MVP-0.2.md`
 - 后续路线：`MVP/ROADMAP.md`
@@ -119,6 +119,19 @@ dra init
 Linux / macOS 同理。想让设置长期生效，把这两行写进 PowerShell profile（或 shell 的 rc 文件）。
 `dra doctor` 会显示它实际读到的是哪个配置路径。
 
+## 证据质量
+
+```bash
+dra eval                 # 最近一次
+dra eval --all           # 全部历史报告的基线
+```
+
+评估是**纯本地**的：引用覆盖、数字能否在引用来源中找到、来源域名与一手占比。
+来源在采集时就会标 `tier`（一手 / 专业媒体 / 一般 / 自媒体）与 `quality` 分数。
+
+当前基线（26 份）：均分 61.5，区间 34–80，B×10 / C×8 / D×8。
+主要失分项是“数字与来源对不上”，不是“没有引用”。
+
 ## 追问
 
 ```bash
@@ -166,6 +179,7 @@ dra ui
 | `dra kb add/import` | 把报告导入本地知识库（不消耗搜索额度） |
 | `dra kb search "查询"` | 关键词 + 向量混合检索（RRF 融合） |
 | `dra ask "问题" --run <id>` | 基于某次研究追问（默认不重新检索） |
+| `dra eval [run_id]` | 本地评估报告证据质量；`--all` 看基线 |
 | `dra show <run_id>` | 看报告；`--trace` 看完整事件时间线 |
 | `dra list` | 列出历史研究 |
 | `dra version` | 版本号 |
@@ -234,7 +248,7 @@ dra ui
 ## 测试
 
 ```bash
-uv run pytest                          # 80 个离线单测，约 2s
+uv run pytest                          # 88 个离线单测，约 2s
 DRA_LIVE=1 uv run pytest -m live       # 真实链路 smoke（会花钱）
 ```
 
