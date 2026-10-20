@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import time
 from collections import deque
 from pathlib import Path
@@ -21,7 +22,8 @@ from rich.text import Text
 from dra import __version__
 from dra.agent import ResearchAgent
 from dra.budget import Budget
-from dra.config import Settings
+from dra.config import Settings, config_path
+from dra.onboarding import PRESETS, collect_checks, failed_critical, save_config
 from dra.store import RunStore
 
 app = typer.Typer(
@@ -181,9 +183,9 @@ def run(
         settings.writer_model = writer
     store = RunStore(settings.runs_dir)
     models = {
-        "plan": settings.plan_model,
-        "analyze": settings.analyze_model,
-        "write": settings.write_model,
+        "plan": settings.plan_model_resolved,
+        "analyze": settings.analyze_model_resolved,
+        "write": settings.write_model_resolved,
     }
 
     budget = Budget(
@@ -342,6 +344,151 @@ def list_runs() -> None:
 def version() -> None:
     """版本号。"""
     console.print(f"dra {__version__}")
+
+
+@app.command()
+def init(
+    base_url: str = typer.Option("", "--base-url", help="OpenAI 兼容端点"),
+    api_key: str = typer.Option("", "--api-key", help="模型 API Key"),
+    model: str = typer.Option("", "--model", help="默认模型名"),
+    tavily_key: str = typer.Option("", "--tavily-key", help="Tavily API Key"),
+    embedding_model: str = typer.Option("", "--embedding-model", help="向量模型（可选）"),
+    runs_dir: str = typer.Option("", "--runs-dir", help="产物目录（默认用户数据目录）"),
+    preset: str = typer.Option("", "--preset", help="dashscope / deepseek / openai / custom"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="非交互：用参数与默认值直接写入"),
+    force: bool = typer.Option(False, "--force", help="覆盖已有配置"),
+) -> None:
+    """生成用户配置：模型端点、密钥与检索密钥（BYOK，密钥只存本机）。"""
+    path = config_path()
+    interactive = sys.stdin.isatty() and not yes
+
+    if path.exists() and not force:
+        if not interactive:
+            console.print(f"[yellow]配置已存在：{path}；如需覆盖请加 --force[/yellow]")
+            raise typer.Exit(code=1)
+        if not typer.confirm(f"配置已存在（{path}），覆盖？", default=False):
+            console.print("[yellow]已取消[/yellow]")
+            raise typer.Exit(code=1)
+
+    if preset and preset not in PRESETS:
+        console.print(f"[red]未知预设：{preset}（可选：{', '.join(PRESETS)}）[/red]")
+        raise typer.Exit(code=1)
+
+    chosen = PRESETS.get(preset or "dashscope", PRESETS["dashscope"])
+
+    if interactive and not preset:
+        table = Table(title="选择模型服务", box=None, pad_edge=False)
+        table.add_column("#", width=3)
+        table.add_column("预设")
+        table.add_column("端点", style="dim")
+        for i, item in enumerate(PRESETS.values(), start=1):
+            table.add_row(str(i), item["label"], item["base_url"] or "（手动填写）")
+        console.print(table)
+        raw = typer.prompt("选择", default="1")
+        try:
+            keys = list(PRESETS)
+            chosen = PRESETS[keys[(int(raw) - 1) % len(keys)]]
+        except (ValueError, IndexError):
+            console.print("[red]无效选择[/red]")
+            raise typer.Exit(code=1) from None
+
+    default_base = base_url or chosen["base_url"]
+    default_model = model or chosen["model"]
+
+    if interactive:
+        try:
+            base_url = typer.prompt("模型端点 Base URL", default=default_base)
+            api_key = typer.prompt(
+                "模型 API Key（输入不回显）", hide_input=True, default=None
+            ) or ""
+            model = typer.prompt("默认模型", default=default_model)
+            embedding_model = typer.prompt(
+                "向量模型（可留空）", default=embedding_model or chosen.get("embedding_model", "")
+            )
+            tavily_key = typer.prompt(
+                "Tavily API Key（输入不回显）", hide_input=True, default=tavily_key or ""
+            )
+            runs_dir = typer.prompt("产物目录", default=runs_dir or str(Settings().runs_dir))
+        except (typer.Abort, EOFError, KeyboardInterrupt):
+            console.print("\n[yellow]已取消，未写入任何配置[/yellow]")
+            raise typer.Exit(code=1) from None
+    else:
+        base_url = base_url or default_base
+        model = model or default_model
+        embedding_model = embedding_model or chosen.get("embedding_model", "")
+
+    if not base_url.startswith(("http://", "https://")):
+        console.print("[red]Base URL 必须以 http:// 或 https:// 开头[/red]")
+        raise typer.Exit(code=1)
+    if not api_key:
+        console.print("[red]缺少模型 API Key。非交互模式请加 --api-key，或去掉 --yes 交互填写[/red]")
+        raise typer.Exit(code=1)
+
+    summary = Table(box=None, show_header=False, pad_edge=False)
+    summary.add_column(style="dim", width=10)
+    summary.add_column()
+    summary.add_row("配置", str(path))
+    summary.add_row("端点", base_url)
+    summary.add_row("模型", model)
+    summary.add_row("密钥", "已填写")
+    summary.add_row("检索", "已填写" if tavily_key else "未填写（dra run 会提示）")
+    summary.add_row("产物", runs_dir or str(Settings().runs_dir))
+    console.print(Panel(summary, title="即将写入", border_style="blue"))
+
+    if interactive and not typer.confirm("确认写入？", default=True):
+        console.print("[yellow]已取消[/yellow]")
+        raise typer.Exit(code=1)
+
+    written = save_config(
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        tavily_api_key=tavily_key,
+        embedding_model=embedding_model,
+        runs_dir=runs_dir,
+    )
+    console.print(f"[green]已写入[/green] {written}  [dim](权限 0600)[/dim]")
+    console.print("\n下一步：")
+    console.print("  dra doctor        [dim]检查 Key 与网络是否可用[/dim]")
+    console.print('  dra run "研究主题"')
+
+
+@app.command()
+def doctor() -> None:
+    """自检：配置文件、密钥、模型端点、对话、检索与数据目录。"""
+    settings = Settings()
+    if console.is_terminal:
+        with console.status("检查中（会消耗极少量额度）..."):
+            checks = collect_checks(settings)
+    else:
+        checks = collect_checks(settings)
+
+    table = Table(title="dra doctor", box=None, pad_edge=False)
+    table.add_column("检查", width=10)
+    table.add_column("结果", width=4)
+    table.add_column("详情", overflow="fold")
+    for check in checks:
+        if check.ok:
+            icon = Text("✓", style="green")
+        elif check.critical:
+            icon = Text("✗", style="red")
+        else:
+            icon = Text("⚠", style="yellow")
+        table.add_row(check.name, icon, check.detail)
+    console.print(table)
+
+    summary = Table(box=None, show_header=False, pad_edge=False)
+    summary.add_column(style="dim", width=10)
+    summary.add_column()
+    for key, value in settings.public_summary().items():
+        summary.add_row(key, str(value))
+    console.print(Panel(summary, title="当前配置（已脱敏）", border_style="bright_black"))
+
+    bad = failed_critical(checks)
+    if bad:
+        console.print(f"[red]{len(bad)} 项检查未通过，修复后再运行 dra run[/red]")
+        raise typer.Exit(code=1)
+    console.print("[green]全部关键检查通过[/green]")
 
 
 if __name__ == "__main__":
