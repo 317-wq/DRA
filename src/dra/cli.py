@@ -507,18 +507,20 @@ def evaluate_cmd(
 def ask(
     question: str = typer.Argument(..., help="追问内容"),
     run_id: str = typer.Option("", "--run", "-r", help="父研究 run id；留空取最近一次"),
+    followup: str = typer.Option("", "--followup", "-f", help="对某条追问继续追问"),
     k: int = typer.Option(6, "--k", help="从父研究里选多少篇证据"),
 ) -> None:
     """基于某次研究追问；默认复用父 run 证据，不重新检索、不消耗搜索额度。"""
     settings = Settings()
     settings.require_llm()
     store = RunStore(settings.runs_dir)
-    if not run_id:
+    target = followup or run_id
+    if not target:
         runs = [item for item in store.list() if item.get("status") != "running"]
         if not runs:
             console.print("[red]还没有可追问的研究[/red]")
             raise typer.Exit(code=1)
-        run_id = runs[0]["run_id"]
+        target = runs[0]["run_id"]
 
     from dra.followup import FollowupEngine
 
@@ -526,9 +528,9 @@ def ask(
     try:
         if console.is_terminal:
             with console.status("基于已有证据回答…"):
-                result = engine.ask(run_id, question, k=k)
+                result = engine.ask(target, question, k=k)
         else:
-            result = engine.ask(run_id, question, k=k)
+            result = engine.ask(target, question, k=k)
     except (ValueError, FileNotFoundError) as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=1) from None
