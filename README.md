@@ -4,7 +4,7 @@
 
 它是一个**本地工具**：数据在你自己电脑上，不需要注册登录，也不需要有人维护服务器。你只需要准备两个 API Key（模型 + 搜索）。
 
-当前版本：**1.5.0**。
+当前版本：**1.6.0**。
 - 目标架构与接口：`MVP/PROJECT.md`（v1.9）
 - 本版范围与验收：`MVP/MVP-1.0.md`
 - 后续路线：`MVP/ROADMAP.md`
@@ -273,7 +273,7 @@ dra ui
 ## 测试
 
 ```bash
-uv run pytest                          # 111 个离线单测，约 11s
+uv run pytest                          # 117 个离线单测，约 13s
 DRA_LIVE=1 uv run pytest -m live       # 真实链路 smoke（会花钱）
 ```
 
