@@ -18,6 +18,7 @@ from typing import Any
 
 from dra.budget import Budget
 from dra.config import Settings
+from dra.models import Source
 from dra.store import Run, RunStore
 
 
@@ -225,7 +226,54 @@ class RunManager:
         if not topic:
             raise ValueError("原任务没有主题，无法重试")
         max_sources = int(meta.get("requested_max_sources") or 12)
+        parent_id = meta.get("parent_run_id")
+        if parent_id:
+            return self.start_continue(
+                parent_id,
+                [str(q) for q in (meta.get("continue_questions") or [])],
+                max_sources,
+            )
         return self.start(topic, max_sources)
+
+    def start_continue(
+        self,
+        parent_id: str,
+        questions: list[str],
+        max_sources: int = 6,
+    ) -> str:
+        """在已完成报告上继续研究：继承父来源，只补新问题。"""
+        parent = self.store.open(parent_id)
+        meta = self.meta(parent_id)
+        if meta.get("status") in ("queued", "running"):
+            raise BusyError("父研究还在进行中，等它结束再继续")
+        if not (parent.dir / "report.md").exists():
+            raise ValueError("父研究还没有报告，无法继续")
+        cleaned = [q.strip() for q in questions if q.strip()][:4]
+        if not cleaned:
+            raise ValueError("继续研究至少需要一个新问题")
+        topic = meta.get("topic") or parent.topic
+        run = self.store.create(topic)
+        run.write_json(
+            "run.json",
+            {
+                "run_id": run.id,
+                "topic": topic,
+                "status": "queued",
+                "started_at": _now(),
+                "sources": [],
+                "notes": [],
+                "requested_max_sources": max_sources,
+                "parent_run_id": parent_id,
+                "mode": "continue",
+                "continue_questions": cleaned,
+            },
+        )
+        self.job_store.upsert(run.id, topic, max_sources, "queued")
+        job = Job(run=run, topic=topic, max_sources=max_sources)
+        with self._lock:
+            self._jobs[run.id] = job
+            self._queue.put(run.id)
+        return run.id
 
     def delete(self, run_id: str) -> bool:
         """删除任务与产物；运行中的任务拒绝删除。"""
@@ -304,14 +352,39 @@ class RunManager:
                 self._update(job, status="running", notes=[])
                 self.job_store.set_status(run_id, "running")
             try:
+                meta = self.meta(run_id)
+                parent_id = meta.get("parent_run_id")
+                seed_sources: list[Source] | None = None
+                seed_report = ""
+                questions = [str(q) for q in (meta.get("continue_questions") or [])]
+                total_sources = job.max_sources
+                if parent_id:
+                    parent = self.store.open(parent_id)
+                    raw = json.loads((parent.dir / "sources.json").read_text(encoding="utf-8"))
+                    seed_sources = [Source(**item) for item in raw]
+                    report_path = parent.dir / "report.md"
+                    seed_report = (
+                        report_path.read_text(encoding="utf-8") if report_path.exists() else ""
+                    )
+                    total_sources = len(seed_sources) + job.max_sources
+
                 agent = self._factory()
-                agent.run(
-                    job.topic,
-                    budget=Budget(),
-                    max_sources=job.max_sources,
-                    run=job.run,
-                    cancel_event=job.cancel_event,
-                )
+                kwargs: dict[str, Any] = {
+                    "budget": Budget(),
+                    "max_sources": total_sources,
+                    "run": job.run,
+                    "cancel_event": job.cancel_event,
+                }
+                if parent_id:
+                    kwargs.update(
+                        {
+                            "seed_sources": seed_sources,
+                            "seed_report": seed_report,
+                            "seed_questions": questions or None,
+                            "parent_run_id": parent_id,
+                        }
+                    )
+                agent.run(job.topic, **kwargs)
                 # Agent 的最终 run.json 不带这个字段，补回去供“重试”使用
                 self._update(job, requested_max_sources=job.max_sources)
                 final = self.meta(run_id).get("status", "done")
