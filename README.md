@@ -1,4 +1,4 @@
-﻿# Deep Research Agent
+# Deep Research Agent
 
 输入一个研究主题，Agent 自己拆题、检索、读正文、判断证据够不够、补检索，最后写一份**每个结论都能溯源到 URL** 的 Markdown 报告。
 
