@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0 — 2026-10-21
+
+- 任务队列落 SQLite，重启后 queued 自动重新入队、running 标 interrupted
+- 设置热加载：`PUT /api/settings` 后新任务立即生效，无需重启
+- 修复 Windows 上时间预算测试的计时 flake
+
 ## 1.2.0 — 2026-10-21
 
 - Windows 便携版：PyInstaller 打包，不依赖 Python/uv
