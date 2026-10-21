@@ -132,9 +132,13 @@ def test_settings_read_write(tmp_path, monkeypatch):
     updated = client.put("/api/settings", json={"model": "test-model", "min_number_support": 0.6})
     assert updated.status_code == 200
     assert "model" in updated.json()["updated"]
+    assert "model" in updated.json()["reloaded"]
     assert cfg.exists()
 
     after = client.get("/api/settings").json()
     assert after["model"] == "test-model"
     assert after["min_number_support"] == 0.6
+    # 热加载：服务持有的 Settings 实例已更新，不需要重启
+    assert manager.settings.model == "test-model"
+    assert manager.settings.min_number_support == 0.6
     manager.close()
