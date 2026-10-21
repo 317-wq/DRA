@@ -1,6 +1,6 @@
 # PROJECT · 深度研究代理（Deep Research Agent）
 
-> 基线版本：v1.12
+> 基线版本：v1.13
 > 最后更新：2026-10-20
 > 说明：本文档只放跨版本稳定的内容（目标架构、技术原则、稳定接口）。
 > 版本范围、依赖与验收见对应的 `MVP-x.y.md`。
@@ -93,6 +93,9 @@
 - 知识库接口：`GET /api/kb`、`GET /api/kb/search`、`POST /api/kb/sink`、`DELETE /api/kb/{doc_id}`；沉淀与检索只调用 embedding。
 - 追问接口：`GET/POST /api/runs/{id}/followups`、`GET /api/runs/{id}/followups/{fid}`；CLI `dra ask`。
 - 追问存储：`runs/<parent>/followups/<id>/{answer.md, meta.json, trace.jsonl}`，父目录 `followups.json` 维护索引；引用沿用父报告编号。
+- 追问树：元数据 `parent_run_id / parent_followup`；可对追问再追问，证据选择结合父问题。
+- 继续研究：`POST /api/runs/{id}/continue` 创建子 run，继承父来源与报告，`mode=continue`；
+  旧来源编号不变，新来源从 `max(n)+1` 开始，报告用更新版语义。
 - 证据质量：来源带 `tier`（3 一手 / 2 专业媒体 / 1 一般 / 0 自媒体）与 `quality`（0–100）；
   `GET /api/runs/{id}/eval` 与 `dra eval` 输出引用覆盖、数字可核验率、来源多样性，纯本地计算。
 - 写作约束：具体数字必须逐字来自证据；写后本地核验，低于 `DRA_MIN_NUMBER_SUPPORT`（默认 0.75）
@@ -132,6 +135,7 @@
 |---|---|---|
 | v1.0 | 2026-10-20 | 初版：从架构图与 `5.html` 原型提取目标架构、技术原则与稳定接口 |
 | v1.1 | 2026-10-20 | 模型适配层增加思考开关（默认关闭）：单次研究 245s → 70s，三角色默认 `qwen3.8-max`；报告收尾对引用 URL 做可达性复核（`link_status`） |
+| v1.13 | 2026-10-21 | 追问树与继续研究 |
 | v1.12 | 2026-10-21 | 后端补全：持久任务队列、重启恢复、设置热加载 |
 | v1.11 | 2026-10-21 | 桌面便携版：desktop 入口、Tk 控制窗口、PyInstaller 打包与 Release 自动构建 |
 | v1.10 | 2026-10-21 | 后端加固：任务队列、取消、重试、重启恢复、原子写、管理 API 与设置读写 |
