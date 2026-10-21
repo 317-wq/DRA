@@ -74,6 +74,8 @@ def test_kb_index_and_sink(tmp_path):
     after = client.get("/api/kb").json()
     assert after["stats"]["documents"] == 1
     assert after["documents"][0]["title"] == "Alpha 主题"
+    assert after["documents"][0]["format"] == "MD"
+    assert after["documents"][0]["origin"] == "研究沉淀"
 
     again = client.post("/api/kb/sink", json={"run_id": rid}).json()
     assert again["skipped"] is True
@@ -134,8 +136,11 @@ def test_upload_markdown_with_auto_tags(tmp_path):
     assert body["kind"] == "note"
     assert body["chunks"] > 0
     assert "RAG" in body["tags"] or "向量数据库" in body["tags"]
+    assert body["kind"] == "note"
 
     detail = client.get(f"/api/kb/{body['doc_id']}").json()
+    assert detail["document"]["format"] == "MD"
+    assert detail["document"]["origin"] == "上传"
     assert detail["document"]["category"]
     assert detail["document"]["tags"]
     assert detail["chunks"]
