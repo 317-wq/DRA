@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0 — 2026-10-21
+
+- 追问树：对追问再追问，引用沿用同一来源编号
+- 继续研究：继承父来源与报告，只补新问题，旧编号不变
+- API：`parent_followup` 与 `POST /api/runs/{id}/continue`
+
 ## 1.3.0 — 2026-10-21
 
 - 任务队列落 SQLite，重启后 queued 自动重新入队、running 标 interrupted
