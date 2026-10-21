@@ -1,6 +1,6 @@
-[project]
+﻿[project]
 name = "dra-research"
-version = "1.9.0"
+version = "1.9.1"
 description = "Deep Research Agent — 本地运行的研究报告生成工具（BYOK）"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -68,3 +68,4 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+

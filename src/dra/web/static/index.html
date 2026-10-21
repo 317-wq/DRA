@@ -130,11 +130,19 @@
             <input id="setBaseUrl" placeholder="https://api.example.com/v1" spellcheck="false">
           </label>
           <label>API Key
-            <input id="setApiKey" type="password" placeholder="粘贴 API Key" autocomplete="off">
+            <div class="secret-field">
+              <input id="setApiKey" type="password" placeholder="粘贴 API Key" autocomplete="off">
+              <button type="button" class="eye-btn" data-target="setApiKey" title="显示/隐藏" aria-label="显示或隐藏 API Key">
+                <svg class="eye-on" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="eye-off" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l18 18"/><path d="M10.6 10.6a2 2 0 002.8 2.8"/><path d="M9.9 4.2A10.8 10.8 0 0112 4c7 0 11 8 11 8a17 17 0 01-3.2 4.2M6.1 6.1A17 17 0 001 12s4 8 11 8a10.6 10.6 0 004.1-.8"/></svg>
+              </button>
+            </div>
           </label>
           <label>模型
-            <input id="setModel" list="modelOptions" placeholder="qwen3.8-max" spellcheck="false">
-            <datalist id="modelOptions"></datalist>
+            <div class="model-field">
+              <select id="setModelSelect"><option value="">选择模型…</option></select>
+              <input id="setModel" placeholder="或手动输入模型名" spellcheck="false">
+            </div>
           </label>
         </div>
         <div class="settings-actions">
@@ -147,7 +155,13 @@
         <p class="settings-sub">研究报告的检索来源，目前支持 Tavily。</p>
         <div class="form-grid">
           <label>Tavily API Key
-            <input id="setTavily" type="password" placeholder="tvly-..." autocomplete="off">
+            <div class="secret-field">
+              <input id="setTavily" type="password" placeholder="tvly-..." autocomplete="off">
+              <button type="button" class="eye-btn" data-target="setTavily" title="显示/隐藏" aria-label="显示或隐藏 Tavily Key">
+                <svg class="eye-on" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="eye-off" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l18 18"/><path d="M10.6 10.6a2 2 0 002.8 2.8"/><path d="M9.9 4.2A10.8 10.8 0 0112 4c7 0 11 8 11 8a17 17 0 01-3.2 4.2M6.1 6.1A17 17 0 001 12s4 8 11 8a10.6 10.6 0 004.1-.8"/></svg>
+              </button>
+            </div>
           </label>
         </div>
 

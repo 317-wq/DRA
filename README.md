@@ -1,10 +1,10 @@
-# Deep Research Agent
+﻿# Deep Research Agent
 
 输入一个研究主题，Agent 自己拆题、检索、读正文、判断证据够不够、补检索，最后写一份**每个结论都能溯源到 URL** 的 Markdown 报告。
 
 它是一个**本地工具**：数据在你自己电脑上，不需要注册登录，也不需要有人维护服务器。你只需要准备两个 API Key（模型 + 搜索）。
 
-当前版本：**1.9.0**。
+当前版本：**1.9.1**。
 - 目标架构与接口：`MVP/PROJECT.md`（v1.9）
 - 本版范围与验收：`MVP/MVP-1.0.md`
 - 后续路线：`MVP/ROADMAP.md`
@@ -287,3 +287,4 @@ CI 在 `.github/workflows/ci.yml`，覆盖 ubuntu / windows / macOS。
 - 密钥以明文存本机（0600），尚未接系统 keyring。
 - 部分站点（YouTube / Wikipedia）抓取成功但服务器直连不可达，`link_status` 会标 `unreachable`。
 - 暂无本地 UI、知识库、追问——见 ROADMAP 0.3–0.5。
+

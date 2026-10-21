@@ -802,6 +802,16 @@ async function loadProviders() {
   return state.providers;
 }
 
+function setModelOptions(models, current) {
+  const select = $("#setModelSelect");
+  if (!select) return;
+  const list = [...new Set((models || []).filter(Boolean))];
+  if (current && !list.includes(current)) list.unshift(current);
+  select.innerHTML = `<option value="">选择模型…</option>` +
+    list.map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join("");
+  select.value = current || "";
+}
+
 async function loadSettings() {
   const hint = $("#settingsHint");
   try {
@@ -822,8 +832,7 @@ async function loadSettings() {
     $("#setApiKey").placeholder = data.api_key_set ? "已配置，留空保持不变" : "粘贴 API Key";
     $("#setTavily").placeholder = data.tavily_key_set ? "已配置，留空保持不变" : "tvly-...";
     $("#setupBanner").hidden = Boolean(data.api_key_set && data.tavily_key_set);
-    const dl = $("#modelOptions");
-    if (dl) dl.innerHTML = "";
+    setModelOptions(match ? [...match.models] : [], data.model || "");
     if (hint) hint.textContent = "";
   } catch (e) {
     if (hint) hint.textContent = `读取设置失败：${e.message}`;
@@ -835,9 +844,9 @@ async function onProviderChange() {
   const provider = state.providers.find((p) => p.id === id);
   if (!provider) return;
   if (provider.base_url) $("#setBaseUrl").value = provider.base_url;
-  const dl = $("#modelOptions");
-  if (dl) dl.innerHTML = (provider.models || []).map((m) => `<option value="${escapeHtml(m)}"></option>`).join("");
-  if (provider.models && provider.models.length) $("#setModel").value = provider.models[0];
+  const models = provider.models || [];
+  setModelOptions(models, models[0] || "");
+  if (models.length) $("#setModel").value = models[0];
   $("#testStatus").textContent = provider.note || "";
 }
 
@@ -853,10 +862,10 @@ async function fetchProviderModels() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ base_url: baseUrl, api_key: apiKey || null }),
     });
-    const dl = $("#modelOptions");
-    dl.innerHTML = data.models.map((m) => `<option value="${escapeHtml(m)}"></option>`).join("");
-    if (!$("#setModel").value && data.models.length) $("#setModel").value = data.models[0];
-    status.textContent = `找到 ${data.models.length} 个模型`;
+    const current = $("#setModel").value.trim();
+    setModelOptions(data.models, current || data.models[0] || "");
+    if (!current && data.models.length) $("#setModel").value = data.models[0];
+    status.textContent = `找到 ${data.models.length} 个模型，可在左侧下拉选择`;
   } catch (e) {
     status.textContent = e.message;
     toast(`拉取失败：${e.message}`, true);
@@ -1323,6 +1332,19 @@ function init() {
 
   $("#setupGo").onclick = () => showView("settings");
   $("#setProvider").onchange = onProviderChange;
+  $("#setModelSelect").onchange = () => {
+    const value = $("#setModelSelect").value;
+    if (value) $("#setModel").value = value;
+  };
+  document.querySelectorAll(".eye-btn").forEach((btn) => {
+    btn.onclick = () => {
+      const input = $("#" + btn.dataset.target);
+      if (!input) return;
+      const reveal = input.type === "password";
+      input.type = reveal ? "text" : "password";
+      btn.classList.toggle("on", reveal);
+    };
+  });
   $("#fetchModelsBtn").onclick = fetchProviderModels;
   $("#testProviderBtn").onclick = testProvider;
   $("#saveSettingsBtn").onclick = saveSettings;
@@ -1348,3 +1370,4 @@ function init() {
 }
 
 init();
+

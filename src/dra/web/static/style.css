@@ -663,3 +663,19 @@ textarea:focus { border-color: #93b4f5; box-shadow: 0 0 0 4px rgba(59, 130, 246,
 /* 导航 4 项用 2x2，避免“研究历史”折行 */
 .nav { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .nav-item { white-space: nowrap; font-size: 12px; height: 34px; }
+
+/* ---------------- key eye / model picker ---------------- */
+.secret-field { position: relative; }
+.secret-field input { width: 100%; padding-right: 38px; }
+.eye-btn {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  width: 30px; height: 30px; border: none; border-radius: 7px;
+  background: none; color: var(--text-3); cursor: pointer;
+  display: grid; place-items: center;
+}
+.eye-btn:hover { background: var(--surface-3); color: var(--text-2); }
+.eye-btn .eye-off { display: none; }
+.eye-btn.on .eye-on { display: none; }
+.eye-btn.on .eye-off { display: block; }
+.model-field { display: flex; gap: 6px; }
+.model-field select, .model-field input { flex: 1; min-width: 0; }
