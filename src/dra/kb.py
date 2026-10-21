@@ -75,7 +75,8 @@ def chunk_text(text: str, target: int = 700, overlap: int = 100) -> list[str]:
     current: list[str] = []
     skip = False
     for line in cleaned.split("\n"):
-        if line.startswith("## "):
+        # ## 与 ### 都是语义边界：医疗 QA 的每个 ### Qn 应该独立成块
+        if re.match(r"^#{2,3}\s+", line):
             if current and not skip:
                 sections.append("\n".join(current).strip())
             current = [line]
@@ -89,6 +90,9 @@ def chunk_text(text: str, target: int = 700, overlap: int = 100) -> list[str]:
     chunks: list[str] = []
     for section in sections:
         if not section:
+            continue
+        # 只有标题没有正文的小节（如 "## 一、基础医学知识"）不单独成块
+        if len(section) < 60 and section.lstrip().startswith("#") and "\n" not in section.strip():
             continue
         if len(section) <= target:
             chunks.append(section)
@@ -130,6 +134,37 @@ def _cosine(a: list[float], b: list[float]) -> float:
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(y * y for y in b))
     return dot / (na * nb) if na and nb else 0.0
+
+
+def focus_snippet(text: str, query: str, width: int = 320) -> str:
+    """截取与查询词最相关的一段，而不是永远返回块的开头。"""
+    terms = {term for term in tokenize(query) if len(term) >= 2}
+    if not terms:
+        return text[:width]
+    positions: list[int] = []
+    for term in terms:
+        positions.extend(match.start() for match in re.finditer(re.escape(term), text))
+    if not positions:
+        return text[:width]
+    best_score, best_start = -1, 0
+    for pos in positions:
+        start = max(0, pos - width // 3)
+        window = text[start : start + width]
+        score = sum(1 for term in terms if term in window)
+        if score > best_score:
+            best_score, best_start = score, start
+    prefix = "…" if best_start > 0 else ""
+    suffix = "…" if best_start + width < len(text) else ""
+    return prefix + text[best_start : best_start + width] + suffix
+
+
+def term_coverage(query: str, text: str) -> float:
+    """查询词（CJK 二元组 / 英文词）在文本中的覆盖率。"""
+    terms = {term for term in tokenize(query) if len(term) >= 2}
+    if not terms:
+        return 0.0
+    hits = sum(1 for term in terms if term in text)
+    return hits / len(terms)
 
 
 def bm25_scores(query: str, texts: list[str], k1: float = 1.5, b: float = 0.75) -> list[float]:
@@ -177,10 +212,12 @@ class SearchHit:
     run_id: str | None
     seq: int
     text: str
-    score: float
-    keyword: float
-    vector: float
-    source_path: str | None
+    snippet: str = ""
+    coverage: float = 0.0
+    score: float = 0.0
+    keyword: float = 0.0
+    vector: float = 0.0
+    source_path: str | None = None
 
 
 class KnowledgeBase:
@@ -305,6 +342,54 @@ class KnowledgeBase:
                 )
         return doc_id, len(pieces)
 
+    def reindex_document(self, doc_id: int) -> int:
+        """按当前切块规则重建一篇文档的分块（旧文档用）。"""
+        document = self._conn.execute(
+            "SELECT title FROM documents WHERE id = ?", (doc_id,)
+        ).fetchone()
+        if document is None:
+            raise ValueError("文档不存在")
+        rows = self._conn.execute(
+            "SELECT text FROM chunks WHERE doc_id = ? ORDER BY seq ASC", (doc_id,)
+        ).fetchall()
+        if not rows:
+            raise ValueError("文档没有分块，无法重建")
+        text = "\n\n".join(row["text"] for row in rows)
+        pieces = chunk_text(text)
+        if not pieces:
+            raise ValueError("重建后没有分块")
+        vectors: list[list[float]] = []
+        model = ""
+        if self.adapter is not None:
+            try:
+                vectors = self.adapter.embed(pieces)
+                model = self.settings.embedding_model
+            except Exception:
+                vectors = []
+        category, tag_list = classify(document["title"], text)
+        with self._conn:
+            self._conn.execute("DELETE FROM chunks WHERE doc_id = ?", (doc_id,))
+            for seq, piece in enumerate(pieces, start=1):
+                vector = vectors[seq - 1] if len(vectors) >= seq else None
+                self._conn.execute(
+                    "INSERT INTO chunks(doc_id, seq, text, chars, embedding, dim, model)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        doc_id,
+                        seq,
+                        piece,
+                        len(piece),
+                        _pack(vector) if vector else None,
+                        len(vector) if vector else 0,
+                        model if vector else None,
+                    ),
+                )
+            self._conn.execute(
+                "UPDATE documents SET chunk_count = ?, category = ?, tags = ? WHERE id = ?",
+                (len(pieces), category, tags_to_text(tag_list), doc_id),
+            )
+        return len(pieces)
+
     def remove(self, doc_id: int) -> bool:
         with self._conn:
             cur = self._conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
@@ -425,9 +510,27 @@ class KnowledgeBase:
         if not fused:
             return [], {"mode": mode, "keyword_hits": 0, "vector_hits": 0}
 
-        order = sorted(fused, key=lambda i: fused[i], reverse=True)[:k]
+        # 用查询词覆盖率重排：RRF 只反映排名，不反映“这条到底答不答问题”
+        ranked = []
+        for index, base in fused.items():
+            coverage = term_coverage(query, rows[index]["text"])
+            ranked.append((base + 0.012 * coverage, coverage, index))
+        ranked.sort(reverse=True)
+        top_keyword = max((keyword_scores[index] for _, _, index in ranked), default=0.0)
+
         hits = []
-        for index in order:
+        for score, coverage, index in ranked:
+            if len(hits) >= k:
+                break
+            # 弱相关结果直接截断：覆盖度、关键词强度、向量相似度至少一项要站得住
+            if hits:
+                strong = (
+                    coverage >= 0.4
+                    or keyword_scores[index] >= top_keyword * 0.35
+                    or vector_scores[index] >= 0.6
+                )
+                if not strong:
+                    break
             row = rows[index]
             hits.append(
                 SearchHit(
@@ -437,7 +540,9 @@ class KnowledgeBase:
                     run_id=row["run_id"],
                     seq=row["seq"],
                     text=row["text"],
-                    score=fused[index],
+                    snippet=focus_snippet(row["text"], query),
+                    coverage=round(coverage, 3),
+                    score=score,
                     keyword=keyword_scores[index],
                     vector=vector_scores[index],
                     source_path=row["source_path"],
