@@ -37,35 +37,37 @@
       <div id="runBadge" class="badge idle">就绪</div>
     </header>
 
-    <div id="view-research" class="view">
-      <section class="composer">
-        <div class="composer-head">
-          <div>
-            <h2>开始一次研究</h2>
-            <p>支持任意主题；报告里的每条结论都会标注来源编号。</p>
-          </div>
-          <span class="kbd-hint">Ctrl + Enter</span>
-        </div>
-        <textarea id="topic" rows="2" placeholder="输入研究主题，例如：2026 年主流 Agent 记忆机制方案对比"></textarea>
-        <div class="controls">
-          <label>来源上限
-            <input id="maxSources" type="number" value="12" min="4" max="20">
-          </label>
-          <button id="startBtn" class="primary">开始研究</button>
-        </div>
-        <div class="hint" id="hint">Agent 会自动拆题、检索、交叉验证，并生成带引用的报告。</div>
-      </section>
+    <div id="view-research" class="view research-view">
+      <div class="research-layout">
+        <section class="left-col">
+          <section class="composer">
+            <div class="composer-head">
+              <div>
+                <h2>开始一次研究</h2>
+                <p>输入主题，Agent 自动拆题并检索。</p>
+              </div>
+              <span class="kbd-hint">Ctrl + Enter</span>
+            </div>
+            <textarea id="topic" rows="2" placeholder="输入研究主题，例如：2026 年主流 Agent 记忆机制方案对比"></textarea>
+            <div class="controls">
+              <label>来源上限
+                <input id="maxSources" type="number" value="12" min="4" max="20">
+              </label>
+              <button id="startBtn" class="primary">开始研究</button>
+            </div>
+            <div class="hint" id="hint">Agent 会自动拆题、检索、交叉验证，并生成带引用的报告。</div>
+          </section>
 
-      <section class="workspace">
-        <div class="flow">
-          <div class="stages" id="stages"></div>
-          <div class="logs-wrap">
-            <div class="logs-head">执行事件</div>
-            <div class="logs" id="logs"></div>
+          <div class="flow">
+            <div class="stages" id="stages"></div>
+            <div class="logs-wrap">
+              <div class="logs-head">执行事件</div>
+              <div class="logs" id="logs"></div>
+            </div>
           </div>
-        </div>
+        </section>
 
-        <div class="result">
+        <section class="result">
           <div class="tabs">
             <button class="tab active" data-tab="report">报告</button>
             <button class="tab" data-tab="sources">来源</button>
@@ -76,8 +78,8 @@
           <div id="panel" class="panel">
             <div class="empty">还没有报告。输入主题开始一次研究。</div>
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
     </div>
 
     <div id="view-history" class="view history-view" hidden>
