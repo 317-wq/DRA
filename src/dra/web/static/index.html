@@ -93,8 +93,13 @@
           <div class="kb-toolbar">
             <input id="kbQuery" placeholder="搜索知识库，例如：换电 成本 / 向量数据库 延迟">
             <button id="kbSearchBtn" class="primary">搜索</button>
+            <button id="kbAddBtn" class="ghost-btn kb-add">＋ 添加文档</button>
+            <input id="kbFile" type="file" accept=".md,.markdown,.txt,.pdf" hidden>
           </div>
-          <div class="kb-stats" id="kbStats"></div>
+          <div class="kb-filterbar">
+            <select id="kbCategory"><option value="">全部分类</option></select>
+            <span class="kb-stats" id="kbStats"></span>
+          </div>
           <div class="kb-results" id="kbResults"></div>
           <div class="kb-docs-head">已入库文档</div>
           <div class="kb-docs" id="kbDocs"></div>
