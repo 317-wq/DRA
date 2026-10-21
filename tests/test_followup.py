@@ -110,3 +110,29 @@ def test_list_empty(tmp_path):
     settings, store, parent = seed(tmp_path)
     engine = FollowupEngine(settings, store, llm=FakeLLM())
     assert engine.list(parent) == []
+
+
+def test_chain_followup(tmp_path):
+    settings, store, parent = seed(tmp_path)
+    engine = FollowupEngine(settings, store, llm=FakeLLM("追问结论[2]。"))
+
+    first = engine.ask(parent, "beta 是什么？")
+    second = engine.ask(first.followup_id, "那 gamma 呢？")
+
+    assert second.parent_run_id == parent
+    assert second.parent_followup == first.followup_id
+    assert "的追问" in second.answer
+
+    items = engine.list(parent)
+    assert len(items) == 2
+    assert items[0]["parent_followup"] == first.followup_id
+
+    children = engine.list(first.followup_id)
+    assert [item["id"] for item in children] == [second.followup_id]
+
+
+def test_chain_followup_unknown_parent(tmp_path):
+    settings, store, _ = seed(tmp_path)
+    engine = FollowupEngine(settings, store, llm=FakeLLM())
+    with pytest.raises(FileNotFoundError):
+        engine.ask("20261021-000000-abcd", "问不到？")
