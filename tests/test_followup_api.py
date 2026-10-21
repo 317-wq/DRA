@@ -112,3 +112,34 @@ def test_followup_without_report(tmp_path):
     (run.dir / "report.md").unlink()
     res = client.post(f"/api/runs/{parent}/followups", json={"question": "还能问吗？"})
     assert res.status_code == 409
+
+
+def test_followup_chain_api(tmp_path):
+    client, store = build(tmp_path)
+    parent = seed(store)
+    first = client.post(
+        f"/api/runs/{parent}/followups", json={"question": "beta 是什么？"}
+    ).json()
+    second = client.post(
+        f"/api/runs/{parent}/followups",
+        json={"question": "再问一点", "parent_followup": first["id"]},
+    )
+    assert second.status_code == 200
+    body = second.json()
+    assert body["parent_followup"] == first["id"]
+    assert body["parent_run_id"] == parent
+
+    items = client.get(f"/api/runs/{parent}/followups").json()["items"]
+    assert len(items) == 2
+    detail = client.get(f"/api/runs/{parent}/followups/{body['id']}").json()
+    assert detail["meta"]["parent_followup"] == first["id"]
+
+
+def test_followup_chain_unknown_parent(tmp_path):
+    client, store = build(tmp_path)
+    parent = seed(store)
+    res = client.post(
+        f"/api/runs/{parent}/followups",
+        json={"question": "再问一点", "parent_followup": "20261021-000000-abcd"},
+    )
+    assert res.status_code == 404
