@@ -103,6 +103,8 @@ class RunContext:
     usage: ChatUsage = field(default_factory=ChatUsage)
     notes: list[str] = field(default_factory=list)
     cancel_event: threading.Event | None = None
+    parent_report: str = ""
+    parent_run_id: str | None = None
     searched_queries: set[str] = field(default_factory=set)
     _by_url: dict[str, Source] = field(default_factory=dict)
 
@@ -136,7 +138,7 @@ class RunContext:
             if subq_id not in src.subquestion_ids:
                 src.subquestion_ids.append(subq_id)
             return None
-        n = len(self.sources) + 1
+        n = max((src.n for src in self.sources), default=0) + 1
         quality = assess_source(domain=domain_of(canon), content=content, published_at=published_at)
         src = Source(
             n=n,
@@ -189,6 +191,10 @@ class ResearchAgent:
         on_event=None,
         run: Run | None = None,
         cancel_event: threading.Event | None = None,
+        seed_sources: list[Source] | None = None,
+        seed_report: str = "",
+        seed_questions: list[str] | None = None,
+        parent_run_id: str | None = None,
     ) -> RunResult:
         """执行一次完整研究并返回结果。"""
         budget = budget or Budget()
@@ -206,7 +212,14 @@ class ResearchAgent:
             bus=bus,
             max_sources=max_sources,
             cancel_event=cancel_event,
+            parent_report=seed_report,
+            parent_run_id=parent_run_id,
         )
+        for src in seed_sources or []:
+            canon = canonicalize(src.url)
+            if canon and canon not in ctx._by_url:
+                ctx.sources.append(src)
+                ctx._by_url[canon] = src
         started_wall = datetime.now()
         status = "failed"
         report_md = ""
@@ -219,6 +232,7 @@ class ResearchAgent:
             {
                 "topic": topic,
                 "max_sources": max_sources,
+                "parent_run_id": parent_run_id,
                 "budget": budget.snapshot(),
                 "models": {
                     "plan": self.settings.plan_model_resolved,
@@ -231,7 +245,10 @@ class ResearchAgent:
         try:
             self.settings.require_llm()
             self.settings.require_search()
-            subquestions = self._plan(ctx)
+            if seed_questions:
+                subquestions = self._reuse_questions(ctx, seed_questions)
+            else:
+                subquestions = self._plan(ctx)
             bus.emit(
                 "plan.ready",
                 "plan",
@@ -301,7 +318,11 @@ class ResearchAgent:
             model=self.settings.write_model_resolved,
             notes=ctx.notes,
         )
-        run.write_json("run.json", result.model_dump())
+        payload = result.model_dump()
+        if ctx.parent_run_id:
+            payload["parent_run_id"] = ctx.parent_run_id
+            payload["mode"] = "continue"
+        run.write_json("run.json", payload)
         bus.emit(
             "run.failed" if status == "failed" else "run.finished",
             "done",
@@ -323,7 +344,7 @@ class ResearchAgent:
         """拆题：主题 → 子问题与检索式。"""
         res = self._chat(
             ctx,
-            plan_messages(ctx.topic, n=4),
+            plan_messages(ctx.topic, n=4, parent_report=ctx.parent_report),
             model=self.settings.plan_model_resolved,
             max_tokens=1800,
             json_mode=True,
@@ -345,6 +366,17 @@ class ResearchAgent:
             subs.append(SubQuestion(id=len(subs) + 1, question=question[:200], queries=queries[:2]))
         if not subs:
             raise JSONParseError("规划结果没有可用子问题")
+        return subs
+
+    def _reuse_questions(self, ctx: RunContext, questions: list[str]) -> list[SubQuestion]:
+        """继续研究：直接用用户给的问题，跳过拆题。"""
+        subs = [
+            SubQuestion(id=index, question=q.strip()[:200], queries=[q.strip()])
+            for index, q in enumerate(questions[:4], start=1)
+            if q.strip()
+        ]
+        if not subs:
+            raise JSONParseError("继续研究没有可用的新问题")
         return subs
 
     # --------------------------------------------------------------- collect
@@ -667,7 +699,12 @@ class ResearchAgent:
         )
         res = self._chat(
             ctx,
-            write_messages(ctx.topic, subquestions, ctx.sources),
+            write_messages(
+                ctx.topic,
+                subquestions,
+                ctx.sources,
+                parent_report=ctx.parent_report,
+            ),
             model=self.settings.write_model_resolved,
             max_tokens=6000,
             temperature=0.5,
@@ -726,7 +763,9 @@ class ResearchAgent:
             else:
                 ctx.notes.append("数字校对未通过验收（引用或长度损失过大），保留原稿")
 
-        body, cited, dropped = finalize_report(draft, ctx.sources)
+        body, cited, dropped = finalize_report(
+            draft, ctx.sources, renumber=not ctx.parent_run_id
+        )
 
         # 引用复核：只影响 sources.json 的 link_status 与提示，不改报告
         statuses = check_urls([s.url for s in cited]) if self.verify_links else {}
@@ -837,7 +876,8 @@ class ResearchAgent:
     ) -> None:
         """落盘 report / sources / subquestions 三个产物。"""
         ctx.run.write_text("report.md", report)
-        ctx.run.write_json("sources.json", [s.model_dump() for s in cited])
+        keep = ctx.sources if ctx.parent_run_id else cited
+        ctx.run.write_json("sources.json", [s.model_dump() for s in keep])
         ctx.run.write_json("subquestions.json", [sq.model_dump() for sq in subquestions])
 
 
