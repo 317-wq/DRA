@@ -29,6 +29,22 @@ APP_NAME = "dra"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # 旧变量 → 字段名；优先级低于 config.toml，仅用于兼容已有 .env
+# 可在服务运行中热加载的字段（路径类不改，避免运行中换目录）
+HOT_RELOAD_FIELDS = (
+    "base_url",
+    "api_key",
+    "model",
+    "plan_model",
+    "analyze_model",
+    "write_model",
+    "embedding_model",
+    "fallback_models",
+    "disable_thinking",
+    "tavily_api_key",
+    "tavily_base_url",
+    "min_number_support",
+)
+
 LEGACY_ENV = {
     "QWEN_BASE_URL": "base_url",
     "QWEN_API_KEY": "api_key",
@@ -250,6 +266,16 @@ class Settings(BaseSettings):
     def model_chain(self, primary: str) -> list[str]:
         """主模型优先，其余按配置顺序补齐。"""
         return [primary] + [m for m in self.all_models if m != primary]
+
+    def apply_hot(self, other: Settings) -> list[str]:
+        """把另一份配置的可热加载字段复制到当前实例，返回变化的字段。"""
+        changed: list[str] = []
+        for name in HOT_RELOAD_FIELDS:
+            value = getattr(other, name)
+            if getattr(self, name) != value:
+                setattr(self, name, value)
+                changed.append(name)
+        return changed
 
     def public_summary(self) -> dict[str, str]:
         """doctor / 日志用的脱敏摘要。"""
