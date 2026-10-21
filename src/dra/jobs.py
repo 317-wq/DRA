@@ -1,12 +1,14 @@
-"""后台任务管理：单 worker 队列、取消、重试、重启恢复。
+"""后台任务管理：持久队列、取消、重试、重启恢复。
 
 本地单用户，一次只跑一个研究；排队而不是拒绝，是为了让“连续发起”不丢任务。
+队列落在 runs 目录下的 SQLite（`.jobs.sqlite3`），服务重启后排队任务会重新入队。
 """
 
 from __future__ import annotations
 
 import json
 import queue
+import sqlite3
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -35,6 +37,94 @@ class Job:
 AgentFactory = Callable[[], Any]
 
 
+def _now() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+class JobStore:
+    """任务元数据的 SQLite 持久化；每次操作独立连接，避免线程共享连接。"""
+
+    def __init__(self, path: Path) -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS jobs (
+                    run_id TEXT PRIMARY KEY,
+                    topic TEXT NOT NULL,
+                    max_sources INTEGER NOT NULL DEFAULT 12,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    error TEXT
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)")
+
+    def _connect(self) -> sqlite3.Connection:
+        return sqlite3.connect(self.path, timeout=5)
+
+    def upsert(
+        self,
+        run_id: str,
+        topic: str,
+        max_sources: int,
+        status: str,
+        error: str | None = None,
+    ) -> None:
+        """写入或更新一条任务记录。"""
+        now = _now()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO jobs(run_id, topic, max_sources, status, created_at, updated_at, error)
+                VALUES(?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_id) DO UPDATE SET
+                    topic=excluded.topic,
+                    max_sources=excluded.max_sources,
+                    status=excluded.status,
+                    updated_at=excluded.updated_at,
+                    error=excluded.error
+                """,
+                (run_id, topic, max_sources, status, now, now, error),
+            )
+
+    def set_status(self, run_id: str, status: str, error: str | None = None) -> None:
+        """只更新状态。"""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE jobs SET status=?, updated_at=?, error=? WHERE run_id=?",
+                (status, _now(), error, run_id),
+            )
+
+    def get(self, run_id: str) -> dict[str, Any] | None:
+        """读取单条任务记录。"""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM jobs WHERE run_id=?", (run_id,)).fetchone()
+            return dict(row) if row else None
+
+    def pending(self) -> list[dict[str, Any]]:
+        """按创建时间返回排队中的任务。"""
+        return self.by_status("queued")
+
+    def by_status(self, status: str) -> list[dict[str, Any]]:
+        """按状态返回任务（旧的在前面）。"""
+        with self._connect() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM jobs WHERE status=? ORDER BY created_at ASC", (status,)
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def delete(self, run_id: str) -> None:
+        """删除任务记录。"""
+        with self._connect() as conn:
+            conn.execute("DELETE FROM jobs WHERE run_id=?", (run_id,))
+
+
 def read_new_events(path: Path, sent: int) -> tuple[list[dict[str, Any]], int]:
     """从 trace.jsonl 读取尚未发送的完整事件行；最后一行不完整就留到下次。"""
     if not path.exists():
@@ -60,10 +150,6 @@ def read_all_events(path: Path) -> list[dict[str, Any]]:
     return events
 
 
-def _now() -> str:
-    return datetime.now().isoformat(timespec="seconds")
-
-
 class RunManager:
     """发起、排队、执行、取消与重试研究任务。"""
 
@@ -76,6 +162,7 @@ class RunManager:
     ) -> None:
         self.settings = settings
         self.store = store or RunStore(settings.runs_dir)
+        self.job_store = JobStore(self.store.root / ".jobs.sqlite3")
         if agent_factory is None:
             from dra.agent import ResearchAgent
 
@@ -91,7 +178,7 @@ class RunManager:
 
     # ------------------------------------------------------------------ API
     def start(self, topic: str, max_sources: int = 12) -> str:
-        """创建任务并排队，立刻返回 run_id。"""
+        """创建任务并持久化入队，立刻返回 run_id。"""
         run = self.store.create(topic)
         job = Job(run=run, topic=topic, max_sources=max_sources)
         run.write_json(
@@ -106,6 +193,7 @@ class RunManager:
                 "requested_max_sources": max_sources,
             },
         )
+        self.job_store.upsert(run.id, topic, max_sources, "queued")
         with self._lock:
             self._jobs[run.id] = job
             self._queue.put(run.id)
@@ -124,6 +212,7 @@ class RunManager:
             job.cancel_event.set()
             if not job.started:
                 self._update(job, status="cancelled", finished_at=_now(), notes=["排队中被取消"])
+                self.job_store.set_status(run_id, "cancelled")
                 return "queued"
             return "running"
 
@@ -144,6 +233,7 @@ class RunManager:
             if self.is_running(run_id):
                 raise BusyError("任务还在运行，先取消再删除")
             self._jobs.pop(run_id, None)
+            self.job_store.delete(run_id)
             return self.store.delete(run_id)
 
     def is_running(self, run_id: str) -> bool:
@@ -207,10 +297,12 @@ class RunManager:
                 if job.cancel_event.is_set():
                     job.started = True
                     self._update(job, status="cancelled", finished_at=_now())
+                    self.job_store.set_status(run_id, "cancelled")
                     continue
                 job.started = True
                 self._current = run_id
                 self._update(job, status="running", notes=[])
+                self.job_store.set_status(run_id, "running")
             try:
                 agent = self._factory()
                 agent.run(
@@ -222,6 +314,8 @@ class RunManager:
                 )
                 # Agent 的最终 run.json 不带这个字段，补回去供“重试”使用
                 self._update(job, requested_max_sources=job.max_sources)
+                final = self.meta(run_id).get("status", "done")
+                self.job_store.set_status(run_id, final)
             except BaseException as exc:  # 线程里不能把异常留给调用方
                 self._mark_failed(job, exc)
             finally:
@@ -251,20 +345,62 @@ class RunManager:
             return
         note = f"{type(exc).__name__}: {exc}"
         self._update(job, status="failed", finished_at=_now(), notes=[note])
+        self.job_store.set_status(job.run.id, "failed", note)
 
     def _recover_stale(self) -> None:
-        """服务重启后，把上次遗留的 queued/running 标成 interrupted。"""
+        """重启后：DB 里 queued 的重新入队；running 的标 interrupted。"""
+        for row in self.job_store.pending():
+            run_id = row["run_id"]
+            try:
+                run = self.store.open(run_id)
+            except FileNotFoundError:
+                self.job_store.delete(run_id)
+                continue
+            job = Job(
+                run=run,
+                topic=row.get("topic") or run.topic,
+                max_sources=int(row.get("max_sources") or 12),
+            )
+            self._jobs[run_id] = job
+            self._queue.put(run_id)
+
+        for row in self.job_store.by_status("running"):
+            run_id = row["run_id"]
+            try:
+                run = self.store.open(run_id)
+            except FileNotFoundError:
+                self.job_store.delete(run_id)
+                continue
+            meta = self.meta(run_id)
+            notes = list(meta.get("notes") or [])
+            notes.append("服务重启，任务被中断")
+            meta.update({"status": "interrupted", "finished_at": _now(), "notes": notes})
+            run.write_json("run.json", meta)
+            self.job_store.set_status(run_id, "interrupted")
+
+        # 兼容 1.1 之前没有 jobs 表的 run
         for meta in self.store.list():
-            if meta.get("status") not in ("queued", "running"):
+            status = meta.get("status")
+            if status not in ("queued", "running"):
                 continue
             run_id = meta.get("run_id", "")
-            if not run_id:
+            if not run_id or self.job_store.get(run_id):
                 continue
             try:
                 run = self.store.open(run_id)
             except FileNotFoundError:
                 continue
-            notes = list(meta.get("notes") or [])
-            notes.append("服务重启，任务被中断")
-            meta.update({"status": "interrupted", "finished_at": _now(), "notes": notes})
-            run.write_json("run.json", meta)
+            if status == "queued":
+                topic = meta.get("topic") or run.topic
+                max_sources = int(meta.get("requested_max_sources") or 12)
+                self.job_store.upsert(run_id, topic, max_sources, "queued")
+                self._jobs[run_id] = Job(run=run, topic=topic, max_sources=max_sources)
+                self._queue.put(run_id)
+            else:
+                notes = list(meta.get("notes") or [])
+                notes.append("服务重启，任务被中断")
+                meta.update({"status": "interrupted", "finished_at": _now(), "notes": notes})
+                run.write_json("run.json", meta)
+                self.job_store.upsert(
+                    run_id, meta.get("topic") or run.topic, 12, "interrupted"
+                )
