@@ -643,7 +643,10 @@ async function renderHistory() {
     wrap.innerHTML = "";
     runs.forEach((run) => {
       const item = el("div", `hist${run.run_id === state.runId ? " active" : ""}`);
-      item.onclick = () => loadRun(run.run_id);
+      item.onclick = () => {
+        showView("research");
+        loadRun(run.run_id);
+      };
       const title = el("div", "t", run.topic || run.run_id);
       const meta = el("div", "m");
       const dot = el("span", `dot ${run.status || "running"}`);
@@ -746,17 +749,157 @@ function resetView() {
   renderHistory();
 }
 
-/* ---------------- knowledge base ---------------- */
+/* ---------------- views / history ---------------- */
 function showView(name) {
+  const views = {
+    research: ["研究", "输入主题，Agent 自动拆题、检索并生成可溯源报告"],
+    history: ["研究历史", "每次研究自动记录；可以继续研究、追问、沉淀到知识库"],
+    kb: ["知识库", "把报告沉淀进来，按关键词与向量混合检索"],
+  };
+  const meta = views[name] || views.research;
   document.querySelectorAll(".nav-item").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.view === name);
   });
   $("#view-research").hidden = name !== "research";
+  $("#view-history").hidden = name !== "history";
   $("#view-kb").hidden = name !== "kb";
-  $("#viewTitle").textContent = name === "kb" ? "知识库" : "研究";
+  $("#viewTitle").textContent = meta[0];
+  $("#viewSubtitle").textContent = meta[1];
   if (name === "kb") loadKb();
+  if (name === "history") loadHistoryView();
 }
 
+function humanTime(iso) {
+  const m = String(iso || "").match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})/);
+  return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}` : (iso || "");
+}
+
+function runCardHtml(run) {
+  const status = run.status || "done";
+  const followups = run.followup_count || 0;
+  return `<article class="run-card" data-id="${run.run_id}">
+    <div class="run-top">
+      <span class="run-dot ${status}"></span>
+      <h3>${escapeHtml(run.topic || run.run_id)}</h3>
+      <span class="badge ${status}">${statusLabel(status)}</span>
+    </div>
+    <div class="run-meta">
+      <span>${humanTime(run.started_at)}</span>
+      <span>${(run.sources || []).length} 篇来源</span>
+      <span>${run.chars || 0} 字</span>
+      ${followups ? `<span>${followups} 条追问</span>` : ""}
+    </div>
+    <div class="run-actions">
+      <button data-act="view">查看报告</button>
+      <button data-act="continue">继续研究</button>
+      <button data-act="ask">基于此追问</button>
+      <button data-act="sink">沉淀到知识库</button>
+      <button data-act="delete" class="danger">删除</button>
+      ${followups ? `<button data-act="tree" class="link">▶ ${followups} 条追问</button>` : ""}
+    </div>
+    <div class="run-followups" hidden></div>
+  </article>`;
+}
+
+async function loadHistoryView() {
+  const wrap = $("#historyCards");
+  wrap.innerHTML = `<div class="empty">读取中…</div>`;
+  try {
+    const data = await api("/api/runs?limit=100");
+    $("#historyCount").textContent = `${data.total || 0} 次研究`;
+    const runs = data.runs || [];
+    if (!runs.length) {
+      wrap.innerHTML = `<div class="empty"><b>还没有研究</b>回到「研究」输入一个主题开始。</div>`;
+      return;
+    }
+    wrap.innerHTML = runs.map(runCardHtml).join("");
+    wrap.querySelectorAll(".run-card").forEach((card) => {
+      const id = card.dataset.id;
+      card.querySelectorAll("button[data-act]").forEach((btn) => {
+        btn.onclick = () => historyAction(id, btn.dataset.act, card);
+      });
+    });
+  } catch (e) {
+    wrap.innerHTML = `<div class="empty">读取历史失败：${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function openRun(runId, tab = "report") {
+  showView("research");
+  await loadRun(runId);
+  selectTab(tab);
+}
+
+async function historyAction(runId, action, card) {
+  if (action === "view") { await openRun(runId, "report"); return; }
+  if (action === "ask") {
+    await openRun(runId, "followups");
+    const input = $("#qaInput");
+    if (input) input.focus();
+    return;
+  }
+  if (action === "delete") {
+    if (!confirm("删除这次研究及其全部产物？")) return;
+    try {
+      await api(`/api/runs/${runId}`, { method: "DELETE" });
+      toast("已删除");
+      loadHistoryView();
+      renderHistory();
+    } catch (e) { toast(`删除失败：${e.message}`, true); }
+    return;
+  }
+  if (action === "sink") {
+    try {
+      const res = await api("/api/kb/sink", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ run_id: runId }),
+      });
+      toast(res.skipped ? "这份报告已在知识库中" : `已沉淀 ${res.chunks} 块`);
+    } catch (e) { toast(`沉淀失败：${e.message}`, true); }
+    return;
+  }
+  if (action === "continue") {
+    const raw = prompt("补充哪些新问题？每行一个（最多 4 个）");
+    if (raw === null) return;
+    const questions = raw.split("\n").map((q) => q.trim()).filter(Boolean);
+    if (!questions.length) { toast("至少填一个新问题", true); return; }
+    try {
+      const res = await api(`/api/runs/${runId}/continue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questions, max_sources: 6 }),
+      });
+      toast("已加入队列，研究完成后自动刷新");
+      await openRun(res.run_id, "report");
+    } catch (e) { toast(`继续研究失败：${e.message}`, true); }
+    return;
+  }
+  if (action === "tree") {
+    const box = card.querySelector(".run-followups");
+    if (!box) return;
+    if (!box.hidden) { box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML = `<div class="empty">读取追问中…</div>`;
+    try {
+      const data = await api(`/api/runs/${runId}/followups`);
+      const items = data.items || [];
+      if (!items.length) { box.innerHTML = `<div class="empty">还没有追问。</div>`; return; }
+      box.innerHTML = items.map((item) => `<div class="run-followup" data-fid="${item.id}">
+          <span class="q">${escapeHtml(item.question)}</span>
+          <span class="m">${item.chars || 0} 字 · ${(item.cited_ns || []).length} 篇引用</span>
+        </div>`).join("");
+      box.querySelectorAll(".run-followup").forEach((node) => {
+        node.onclick = async () => {
+          await openRun(runId, "followups");
+          await openFollowup(node.dataset.fid);
+        };
+      });
+    } catch (e) { box.innerHTML = `<div class="empty">读取失败：${escapeHtml(e.message)}</div>`; }
+  }
+}
+
+/* ---------------- knowledge base ---------------- */
 async function loadKb() {
   const statsBox = $("#kbStats");
   try {
@@ -769,24 +912,54 @@ async function loadKb() {
       wrap.innerHTML = `<div class="empty">知识库是空的。先在报告页点“沉淀到知识库”。</div>`;
       return;
     }
-    wrap.innerHTML = docs.map((doc) => `<div class="kb-doc">
+    wrap.innerHTML = docs.map((doc) => `<div class="kb-doc" data-doc="${doc.id}">
         <div class="main"><b>${escapeHtml(doc.title)}</b>
           <div class="m">${doc.chunk_count} 块 · ${doc.embedded} 已向量化 · ${escapeHtml(doc.run_id || "")}</div>
         </div>
-        <button class="link-btn" data-doc="${doc.id}">删除</button>
+        <button class="link-btn" data-del="${doc.id}">删除</button>
       </div>`).join("");
-    wrap.querySelectorAll("button[data-doc]").forEach((btn) => {
-      btn.onclick = async () => {
+    wrap.querySelectorAll(".kb-doc").forEach((node) => {
+      node.onclick = () => loadKbDoc(node.dataset.doc);
+    });
+    wrap.querySelectorAll("button[data-del]").forEach((btn) => {
+      btn.onclick = async (event) => {
+        event.stopPropagation();
         if (!confirm("从知识库删除这份文档？")) return;
         try {
-          await api(`/api/kb/${btn.dataset.doc}`, { method: "DELETE" });
+          await api(`/api/kb/${btn.dataset.del}`, { method: "DELETE" });
           toast("已删除");
+          $("#kbDetail").innerHTML = `<div class="empty">点击左侧文档查看分块与内容。</div>`;
           loadKb();
         } catch (e) { toast(`删除失败：${e.message}`, true); }
       };
     });
   } catch (e) {
     statsBox.textContent = `读取知识库失败：${e.message}`;
+  }
+}
+
+async function loadKbDoc(docId) {
+  const box = $("#kbDetail");
+  box.innerHTML = `<div class="empty">读取中…</div>`;
+  try {
+    const data = await api(`/api/kb/${docId}`);
+    const doc = data.document || {};
+    const chunks = data.chunks || [];
+    box.innerHTML = `<div class="kb-detail-head">
+        <h3>${escapeHtml(doc.title)}</h3>
+        <div class="kb-detail-meta">
+          ${chunks.length} 块 · ${doc.embedded || 0} 已向量化
+          ${doc.run_id ? ` · 来自 ${escapeHtml(doc.run_id)}` : ""}
+        </div>
+      </div>
+      <div class="kb-chunks">
+        ${chunks.map((c) => `<article class="kb-chunk">
+          <div class="ch"><span>#${c.seq}</span><span>${c.chars} 字</span><span>${c.embedded ? "已向量化" : "未向量化"}</span></div>
+          <pre>${escapeHtml(c.text)}</pre>
+        </article>`).join("")}
+      </div>`;
+  } catch (e) {
+    box.innerHTML = `<div class="empty">读取文档失败：${escapeHtml(e.message)}</div>`;
   }
 }
 
@@ -802,11 +975,14 @@ async function searchKb() {
       return;
     }
     const mode = `mode=${data.mode} · 关键词 ${data.keyword_hits} · 向量 ${data.vector_hits}`;
-    box.innerHTML = `<div class="kb-stats">${mode}</div>` + data.hits.map((hit) => `<div class="kb-hit">
+    box.innerHTML = `<div class="kb-stats">${mode}</div>` + data.hits.map((hit) => `<div class="kb-hit" data-doc="${hit.doc_id}">
         <div class="h"><b>${escapeHtml(hit.title)}</b><span>chunk ${hit.seq}</span>
           <span class="score">${hit.score.toFixed(4)} (kw ${hit.keyword.toFixed(2)} / vec ${hit.vector.toFixed(2)})</span></div>
         <div class="txt">${escapeHtml(hit.text.slice(0, 320))}</div>
       </div>`).join("");
+    box.querySelectorAll(".kb-hit").forEach((node) => {
+      node.onclick = () => loadKbDoc(node.dataset.doc);
+    });
   } catch (e) {
     box.innerHTML = `<div class="empty">检索失败：${escapeHtml(e.message)}</div>`;
   }
@@ -898,10 +1074,14 @@ function init() {
   });
 
   const params = new URLSearchParams(location.search);
+  const initialView = params.get("view");
+  if (initialView) showView(initialView);
   const initialTab = params.get("tab");
   if (initialTab) selectTab(initialTab);
   const initialRun = params.get("run");
   if (initialRun) loadRun(initialRun);
+  const initialDoc = params.get("doc");
+  if (initialDoc) loadKbDoc(initialDoc);
 
   window.addEventListener("beforeunload", closeStream);
 }
