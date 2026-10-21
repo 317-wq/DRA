@@ -1,6 +1,6 @@
 [project]
 name = "dra-research"
-version = "1.5.0"
+version = "1.6.0"
 description = "Deep Research Agent — 本地运行的研究报告生成工具（BYOK）"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -27,6 +27,8 @@ dependencies = [
     "pydantic-settings>=2.4.0",
     "platformdirs>=4.2.0",
     "python-dotenv>=1.0.0",
+    "python-multipart>=0.0.9",
+    "pypdf>=5.0.0",
     "fastapi>=0.115.0",
     "uvicorn>=0.30.0",
 ]
