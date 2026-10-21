@@ -115,6 +115,22 @@ def create_app(
         limit = max(1, min(limit, 200))
         offset = max(0, offset)
         items = manager.store.list(limit=limit, offset=offset, status=status)
+        for item in items:
+            try:
+                run = manager.store.open(item["run_id"])
+                followups = run.dir / "followups.json"
+                item["followup_count"] = (
+                    len(json.loads(followups.read_text(encoding="utf-8")))
+                    if followups.exists()
+                    else 0
+                )
+                report = run.dir / "report.md"
+                item["chars"] = (
+                    len(report.read_text(encoding="utf-8")) if report.exists() else 0
+                )
+            except (OSError, ValueError):
+                item.setdefault("followup_count", 0)
+                item.setdefault("chars", 0)
         return {
             "runs": items,
             "total": manager.store.count(status=status),
@@ -343,6 +359,17 @@ def create_app(
                 for hit in hits
             ],
         }
+
+    @app.get("/api/kb/{doc_id}")
+    def kb_document(doc_id: int) -> dict[str, Any]:
+        kb = kb_factory()
+        try:
+            data = kb.get_document(doc_id)
+        finally:
+            kb.close()
+        if data is None:
+            raise HTTPException(status_code=404, detail="文档不存在")
+        return data
 
     @app.post("/api/kb/sink")
     def kb_sink(body: SinkRequest) -> dict[str, Any]:
