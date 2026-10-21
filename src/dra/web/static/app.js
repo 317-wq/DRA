@@ -513,6 +513,10 @@ function renderQuality() {
   const data = state.evalData;
   if (!data) {
     const status = state.meta?.status || "";
+    if (!state.runId || !status) {
+      panel.innerHTML = `<div class="empty">开始一次研究后，这里会显示报告质量。</div>`;
+      return;
+    }
     const running = status === "running" || status === "queued";
     if (running) {
       panel.innerHTML = `<div class="quality-wait">
@@ -520,6 +524,10 @@ function renderQuality() {
         <b>研究报告生成后自动计算质量</b>
         <span>引用覆盖 · 数字可核验 · 来源多样性</span>
       </div>`;
+      return;
+    }
+    if (status !== "done" && status !== "partial") {
+      panel.innerHTML = `<div class="empty">这次研究没有生成报告（${escapeHtml(statusLabel(status))}），无法评估。</div>`;
       return;
     }
     panel.innerHTML = `<div class="quality-wait">
@@ -808,7 +816,7 @@ function runCardHtml(run) {
       <button data-act="ask">基于此追问</button>
       <button data-act="sink">沉淀到知识库</button>
       <button data-act="delete" class="danger">删除</button>
-      ${followups ? `<button data-act="tree" class="link">▶ ${followups} 条追问</button>` : ""}
+      ${followups ? `<button data-act="tree" class="link" data-count="${followups}">▶ ${followups} 条追问</button>` : ""}
     </div>
     <div class="run-followups" hidden></div>
   </article>`;
@@ -891,8 +899,14 @@ async function historyAction(runId, action, card) {
   if (action === "tree") {
     const box = card.querySelector(".run-followups");
     if (!box) return;
-    if (!box.hidden) { box.hidden = true; return; }
+    const toggle = card.querySelector('button[data-act="tree"]');
+    if (!box.hidden) {
+      box.hidden = true;
+      if (toggle) toggle.textContent = `▶ ${toggle.dataset.count || 0} 条追问`;
+      return;
+    }
     box.hidden = false;
+    if (toggle) toggle.textContent = "▼ 收起追问";
     box.innerHTML = `<div class="empty">读取追问中…</div>`;
     try {
       const data = await api(`/api/runs/${runId}/followups`);
@@ -956,12 +970,13 @@ function renderKbDocs() {
   }
   wrap.innerHTML = docs.map((doc) => `<div class="kb-doc" data-doc="${doc.id}">
       <div class="main">
-        <div class="kb-title-line">
-          <b>${escapeHtml(doc.title)}</b>
-          <span class="kind-pill ${escapeHtml(doc.kind || "note")}">${kindLabel(doc.kind)}</span>
-        </div>
+        <div class="kb-title-line"><b>${escapeHtml(doc.title)}</b></div>
         <div class="m">${doc.chunk_count} 块 · ${doc.embedded} 已向量化${doc.run_id ? ` · ${escapeHtml(doc.run_id)}` : ""}</div>
         <div class="tags">${tagsHtml((doc.tags || []).filter((tag) => tag !== doc.category))}${doc.category ? `<span class="cat-tag">${escapeHtml(doc.category)}</span>` : ""}</div>
+      </div>
+      <div class="kb-doc-badges">
+        <span class="kind-pill format">${escapeHtml(doc.format || "MD")}</span>
+        <span class="kind-pill origin">${escapeHtml(doc.origin || "上传")}</span>
       </div>
       <button class="link-btn" data-del="${doc.id}">删除</button>
     </div>`).join("");
@@ -995,7 +1010,8 @@ async function loadKbDoc(docId) {
           <button id="kbReindexBtn" class="ghost-btn">重建切块</button>
         </div>
         <div class="kb-detail-meta">
-          <span class="kind-pill ${escapeHtml(doc.kind || "note")}">${kindLabel(doc.kind)}</span>
+          <span class="kind-pill format">${escapeHtml(doc.format || "MD")}</span>
+          <span class="kind-pill origin">${escapeHtml(doc.origin || "上传")}</span>
           ${chunks.length} 块 · ${doc.embedded || 0} 已向量化
           ${doc.run_id ? ` · 来自 ${escapeHtml(doc.run_id)}` : ""}
         </div>
