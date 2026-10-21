@@ -13,9 +13,9 @@ import socket
 import threading
 import webbrowser
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from markdown_it import MarkdownIt
@@ -25,6 +25,7 @@ from dra import __version__
 from dra.config import Settings, config_path, load_toml, write_toml_config
 from dra.evaluate import evaluate_run
 from dra.followup import FollowupEngine
+from dra.ingest import IngestError, extract_text, kind_for
 from dra.jobs import BusyError, RunManager, read_all_events, read_new_events
 from dra.kb import KnowledgeBase
 from dra.llm import ModelAdapter
@@ -358,6 +359,39 @@ def create_app(
                 }
                 for hit in hits
             ],
+        }
+
+    @app.post("/api/kb/upload")
+    async def kb_upload(file: Annotated[UploadFile, File()]) -> dict[str, Any]:
+        data = await file.read()
+        filename = file.filename or "未命名"
+        try:
+            kind = kind_for(filename)
+            text = extract_text(filename, data)
+        except IngestError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        title = Path(filename).stem or "未命名"
+        kb = kb_factory()
+        try:
+            doc_id, chunks = kb.add_document(
+                title=title,
+                text=text,
+                kind=kind,
+                source_path=filename,
+            )
+            detail = kb.get_document(doc_id) or {}
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            kb.close()
+        document = detail.get("document", {})
+        return {
+            "doc_id": doc_id,
+            "chunks": chunks,
+            "title": title,
+            "kind": kind,
+            "category": document.get("category", ""),
+            "tags": document.get("tags", []),
         }
 
     @app.get("/api/kb/{doc_id}")
