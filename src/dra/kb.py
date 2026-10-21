@@ -19,6 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from dra.classify import classify, tags_from_text, tags_to_text
 from dra.config import Settings
 from dra.llm import ModelAdapter
 
@@ -30,7 +31,10 @@ CREATE TABLE IF NOT EXISTS documents (
     source_path TEXT,
     content_hash TEXT UNIQUE,
     chunk_count INTEGER DEFAULT 0,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    kind TEXT DEFAULT 'report',
+    category TEXT DEFAULT '',
+    tags TEXT DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS chunks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -196,9 +200,26 @@ class KnowledgeBase:
         self._conn = sqlite3.connect(self.path)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(SCHEMA)
+        self._migrate()
 
     def close(self) -> None:
         self._conn.close()
+
+    def _migrate(self) -> None:
+        """给旧库补上 kind / category / tags 字段。"""
+        columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(documents)")}
+        additions = {
+            "kind": "TEXT DEFAULT 'report'",
+            "category": "TEXT DEFAULT ''",
+            "tags": "TEXT DEFAULT ''",
+        }
+        changed = False
+        for name, ddl in additions.items():
+            if name not in columns:
+                self._conn.execute(f"ALTER TABLE documents ADD COLUMN {name} {ddl}")
+                changed = True
+        if changed:
+            self._conn.commit()
 
     # --------------------------------------------------------------- write
     def add_report(
@@ -210,6 +231,24 @@ class KnowledgeBase:
         source_path: str | None = None,
     ) -> tuple[int, int]:
         """导入一份报告；返回 (doc_id, 新增块数)。内容未变则直接返回已有 id。"""
+        return self.add_document(
+            title=title,
+            text=text,
+            kind="report",
+            run_id=run_id,
+            source_path=source_path,
+        )
+
+    def add_document(
+        self,
+        *,
+        title: str,
+        text: str,
+        kind: str = "note",
+        run_id: str | None = None,
+        source_path: str | None = None,
+    ) -> tuple[int, int]:
+        """导入任意文档，自动分类打标签；返回 (doc_id, 新增块数)。"""
         digest = hashlib.sha256((text or "").encode("utf-8")).hexdigest()
         row = self._conn.execute(
             "SELECT id FROM documents WHERE content_hash = ?", (digest,)
@@ -230,10 +269,12 @@ class KnowledgeBase:
             except Exception:
                 vectors = []
 
+        category, tag_list = classify(title, text)
         with self._conn:
             cur = self._conn.execute(
-                "INSERT INTO documents(run_id, title, source_path, content_hash, chunk_count, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO documents("
+                "run_id, title, source_path, content_hash, chunk_count, created_at, kind, category, tags"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id,
                     title,
@@ -241,6 +282,9 @@ class KnowledgeBase:
                     digest,
                     len(pieces),
                     datetime.now().isoformat(timespec="seconds"),
+                    kind,
+                    category,
+                    tags_to_text(tag_list),
                 ),
             )
             doc_id = int(cur.lastrowid)
@@ -273,7 +317,27 @@ class KnowledgeBase:
             "SELECT d.*, (SELECT COUNT(*) FROM chunks c WHERE c.doc_id = d.id AND c.embedding IS NOT NULL)"
             " AS embedded FROM documents d ORDER BY d.id DESC"
         ).fetchall()
-        return [dict(row) for row in rows]
+        docs = [dict(row) for row in rows]
+        for doc in docs:
+            tags = tags_from_text(doc.get("tags"))
+            if not tags:
+                body = "\n".join(
+                    item["text"]
+                    for item in self._conn.execute(
+                        "SELECT text FROM chunks WHERE doc_id = ? ORDER BY seq ASC LIMIT 30",
+                        (doc["id"],),
+                    ).fetchall()
+                )
+                category, tag_list = classify(doc.get("title", ""), body)
+                self._conn.execute(
+                    "UPDATE documents SET category = ?, tags = ? WHERE id = ?",
+                    (category, tags_to_text(tag_list), doc["id"]),
+                )
+                self._conn.commit()
+                doc["category"] = category
+                tags = tag_list
+            doc["tags"] = tags
+        return docs
 
     def get_document(self, doc_id: int) -> dict[str, Any] | None:
         """读取单篇文档及其全部分块（供界面查看）。"""
@@ -290,7 +354,21 @@ class KnowledgeBase:
             " FROM chunks WHERE doc_id = ? ORDER BY seq ASC",
             (doc_id,),
         ).fetchall()
-        return {"document": dict(row), "chunks": [dict(item) for item in chunks]}
+        document = dict(row)
+        tags = tags_from_text(document.get("tags"))
+        if not tags:
+            category, tag_list = classify(
+                document.get("title", ""), "\n".join(item["text"] for item in chunks)
+            )
+            self._conn.execute(
+                "UPDATE documents SET category = ?, tags = ? WHERE id = ?",
+                (category, tags_to_text(tag_list), doc_id),
+            )
+            self._conn.commit()
+            document["category"] = category
+            tags = tag_list
+        document["tags"] = tags
+        return {"document": document, "chunks": [dict(item) for item in chunks]}
 
     def stats(self) -> dict[str, Any]:
         doc_count = self._conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
