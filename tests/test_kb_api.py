@@ -106,3 +106,17 @@ def test_sink_missing_report(tmp_path):
     )
     res = client.post("/api/kb/sink", json={"run_id": run.id})
     assert res.status_code == 409
+
+
+def test_kb_document_detail(tmp_path):
+    client, store = build(tmp_path)
+    rid = seed(store)
+    sink = client.post("/api/kb/sink", json={"run_id": rid}).json()
+
+    detail = client.get(f"/api/kb/{sink['doc_id']}").json()
+    assert detail["document"]["title"] == "Alpha 主题"
+    assert len(detail["chunks"]) == sink["chunks"]
+    assert "alpha" in detail["chunks"][0]["text"].lower()
+    assert detail["chunks"][0]["embedded"] == 1
+
+    assert client.get("/api/kb/99999").status_code == 404
