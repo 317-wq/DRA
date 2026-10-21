@@ -275,6 +275,23 @@ class KnowledgeBase:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def get_document(self, doc_id: int) -> dict[str, Any] | None:
+        """读取单篇文档及其全部分块（供界面查看）。"""
+        row = self._conn.execute(
+            "SELECT d.*, (SELECT COUNT(*) FROM chunks c WHERE c.doc_id = d.id AND c.embedding IS NOT NULL)"
+            " AS embedded FROM documents d WHERE d.id = ?",
+            (doc_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        chunks = self._conn.execute(
+            "SELECT seq, text, chars, dim, model,"
+            " CASE WHEN embedding IS NULL THEN 0 ELSE 1 END AS embedded"
+            " FROM chunks WHERE doc_id = ? ORDER BY seq ASC",
+            (doc_id,),
+        ).fetchall()
+        return {"document": dict(row), "chunks": [dict(item) for item in chunks]}
+
     def stats(self) -> dict[str, Any]:
         doc_count = self._conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
         chunk_count = self._conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
@@ -353,17 +370,6 @@ class KnowledgeBase:
             "keyword_hits": len(kw_rank),
             "vector_hits": len(vec_rank),
         }
-
-    def get_document(self, doc_id: int) -> dict[str, Any] | None:
-        row = self._conn.execute("SELECT * FROM documents WHERE id = ?", (doc_id,)).fetchone()
-        if not row:
-            return None
-        chunks = self._conn.execute(
-            "SELECT seq, text, chars, dim FROM chunks WHERE doc_id = ? ORDER BY seq", (doc_id,)
-        ).fetchall()
-        data = dict(row)
-        data["chunks"] = [dict(chunk) for chunk in chunks]
-        return data
 
     def export_index(self) -> dict[str, Any]:
         """给 UI / 调试用的索引概览。"""
