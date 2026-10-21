@@ -20,9 +20,10 @@
     <button id="newBtn" class="new">＋ 新研究</button>
     <nav class="nav">
       <button class="nav-item active" data-view="research">研究</button>
+      <button class="nav-item" data-view="history">研究历史</button>
       <button class="nav-item" data-view="kb">知识库</button>
     </nav>
-    <div class="sec">历史记录</div>
+    <div class="sec">最近研究</div>
     <div id="history" class="history"></div>
     <div class="side-foot"><span class="live-dot"></span>仅监听 127.0.0.1 · 数据留在本机</div>
   </aside>
@@ -31,7 +32,7 @@
     <header class="topbar">
       <div class="title-wrap">
         <div class="title" id="viewTitle">研究</div>
-        <div class="subtitle">输入主题，Agent 自动拆题、检索并生成可溯源报告</div>
+        <div class="subtitle" id="viewSubtitle">输入主题，Agent 自动拆题、检索并生成可溯源报告</div>
       </div>
       <div id="runBadge" class="badge idle">就绪</div>
     </header>
@@ -59,7 +60,7 @@
         <div class="flow">
           <div class="stages" id="stages"></div>
           <div class="logs-wrap">
-            <div class="logs-head">事件流</div>
+            <div class="logs-head">执行事件</div>
             <div class="logs" id="logs"></div>
           </div>
         </div>
@@ -79,15 +80,29 @@
       </section>
     </div>
 
-    <div id="view-kb" class="view kb-view" hidden>
-      <div class="kb-toolbar">
-        <input id="kbQuery" placeholder="搜索知识库，例如：换电 成本 / 向量数据库 延迟">
-        <button id="kbSearchBtn" class="primary">搜索</button>
+    <div id="view-history" class="view history-view" hidden>
+      <div class="history-head">
+        <span class="count" id="historyCount"></span>
       </div>
-      <div class="kb-stats" id="kbStats"></div>
-      <div class="kb-results" id="kbResults"></div>
-      <div class="kb-docs-head">已入库文档</div>
-      <div class="kb-docs" id="kbDocs"></div>
+      <div id="historyCards" class="history-cards"></div>
+    </div>
+
+    <div id="view-kb" class="view kb-view" hidden>
+      <div class="kb-layout">
+        <section class="kb-list">
+          <div class="kb-toolbar">
+            <input id="kbQuery" placeholder="搜索知识库，例如：换电 成本 / 向量数据库 延迟">
+            <button id="kbSearchBtn" class="primary">搜索</button>
+          </div>
+          <div class="kb-stats" id="kbStats"></div>
+          <div class="kb-results" id="kbResults"></div>
+          <div class="kb-docs-head">已入库文档</div>
+          <div class="kb-docs" id="kbDocs"></div>
+        </section>
+        <aside class="kb-detail" id="kbDetail">
+          <div class="empty">点击左侧文档查看分块与内容。</div>
+        </aside>
+      </div>
     </div>
   </main>
 </div>
