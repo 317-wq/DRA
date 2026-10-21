@@ -24,6 +24,8 @@ const state = {
   evalData: null,
   kbDocs: [],
   kbCategory: "",
+  providers: [],
+  settings: null,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -776,6 +778,7 @@ function showView(name) {
     research: ["研究", "输入主题，Agent 自动拆题、检索并生成可溯源报告"],
     history: ["研究历史", "每次研究自动记录；可以继续研究、追问、沉淀到知识库"],
     kb: ["知识库", "把报告沉淀进来，按关键词与向量混合检索"],
+    settings: ["设置", "配置模型服务、搜索服务与质量阈值"],
   };
   const meta = views[name] || views.research;
   document.querySelectorAll(".nav-item").forEach((btn) => {
@@ -784,10 +787,139 @@ function showView(name) {
   $("#view-research").hidden = name !== "research";
   $("#view-history").hidden = name !== "history";
   $("#view-kb").hidden = name !== "kb";
+  $("#view-settings").hidden = name !== "settings";
   $("#viewTitle").textContent = meta[0];
   $("#viewSubtitle").textContent = meta[1];
   if (name === "kb") loadKb();
   if (name === "history") loadHistoryView();
+  if (name === "settings") loadSettings();
+}
+
+async function loadProviders() {
+  if (state.providers.length) return state.providers;
+  const data = await api("/api/providers");
+  state.providers = data.providers || [];
+  return state.providers;
+}
+
+async function loadSettings() {
+  const hint = $("#settingsHint");
+  try {
+    const data = await api("/api/settings");
+    state.settings = data;
+    await loadProviders();
+    const select = $("#setProvider");
+    select.innerHTML = state.providers
+      .map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`)
+      .join("");
+    const match = state.providers.find((p) => p.base_url && p.base_url === data.base_url);
+    select.value = match ? match.id : "custom";
+    $("#setBaseUrl").value = data.base_url || "";
+    $("#setModel").value = data.model || "";
+    $("#setMinSupport").value = data.min_number_support ?? 0.75;
+    $("#setApiKey").value = "";
+    $("#setTavily").value = "";
+    $("#setApiKey").placeholder = data.api_key_set ? "已配置，留空保持不变" : "粘贴 API Key";
+    $("#setTavily").placeholder = data.tavily_key_set ? "已配置，留空保持不变" : "tvly-...";
+    $("#setupBanner").hidden = Boolean(data.api_key_set && data.tavily_key_set);
+    const dl = $("#modelOptions");
+    if (dl) dl.innerHTML = "";
+    if (hint) hint.textContent = "";
+  } catch (e) {
+    if (hint) hint.textContent = `读取设置失败：${e.message}`;
+  }
+}
+
+async function onProviderChange() {
+  const id = $("#setProvider").value;
+  const provider = state.providers.find((p) => p.id === id);
+  if (!provider) return;
+  if (provider.base_url) $("#setBaseUrl").value = provider.base_url;
+  const dl = $("#modelOptions");
+  if (dl) dl.innerHTML = (provider.models || []).map((m) => `<option value="${escapeHtml(m)}"></option>`).join("");
+  if (provider.models && provider.models.length) $("#setModel").value = provider.models[0];
+  $("#testStatus").textContent = provider.note || "";
+}
+
+async function fetchProviderModels() {
+  const baseUrl = $("#setBaseUrl").value.trim();
+  const apiKey = $("#setApiKey").value.trim();
+  const status = $("#testStatus");
+  if (!baseUrl) { toast("先填 Base URL", true); return; }
+  status.textContent = "拉取中…";
+  try {
+    const data = await api("/api/providers/models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ base_url: baseUrl, api_key: apiKey || null }),
+    });
+    const dl = $("#modelOptions");
+    dl.innerHTML = data.models.map((m) => `<option value="${escapeHtml(m)}"></option>`).join("");
+    if (!$("#setModel").value && data.models.length) $("#setModel").value = data.models[0];
+    status.textContent = `找到 ${data.models.length} 个模型`;
+  } catch (e) {
+    status.textContent = e.message;
+    toast(`拉取失败：${e.message}`, true);
+  }
+}
+
+async function testProvider() {
+  const baseUrl = $("#setBaseUrl").value.trim();
+  const apiKey = $("#setApiKey").value.trim();
+  const model = $("#setModel").value.trim();
+  const status = $("#testStatus");
+  if (!baseUrl || !model) { toast("Base URL 和模型都要填", true); return; }
+  status.textContent = "测试中…";
+  try {
+    const data = await api("/api/providers/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ base_url: baseUrl, api_key: apiKey || null, model }),
+    });
+    status.textContent = `连接成功 · ${data.model} · ${data.latency_ms}ms · ${data.reply}`;
+  } catch (e) {
+    status.textContent = `连接失败：${e.message}`;
+    toast(`连接失败：${e.message}`, true);
+  }
+}
+
+async function saveSettings() {
+  const baseUrl = $("#setBaseUrl").value.trim();
+  const model = $("#setModel").value.trim();
+  const hint = $("#settingsHint");
+  if (!baseUrl || !model) { toast("Base URL 和模型不能为空", true); return; }
+  const payload = {
+    base_url: baseUrl,
+    model,
+    min_number_support: Number($("#setMinSupport").value) || 0.75,
+  };
+  const apiKey = $("#setApiKey").value.trim();
+  if (apiKey) payload.api_key = apiKey;
+  const tavily = $("#setTavily").value.trim();
+  if (tavily) payload.tavily_api_key = tavily;
+  try {
+    await api("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    toast("配置已保存");
+    await loadSettings();
+    if (hint) hint.textContent = "已保存并生效";
+  } catch (e) {
+    if (hint) hint.textContent = `保存失败：${e.message}`;
+    toast(`保存失败：${e.message}`, true);
+  }
+}
+
+async function checkSetup() {
+  try {
+    const data = await api("/api/settings");
+    const ready = Boolean(data.api_key_set && data.tavily_key_set);
+    $("#setupBanner").hidden = ready;
+  } catch (e) {
+    /* 服务未就绪时忽略 */
+  }
 }
 
 function humanTime(iso) {
@@ -1188,6 +1320,13 @@ function init() {
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.onclick = () => selectTab(tab.dataset.tab);
   });
+
+  $("#setupGo").onclick = () => showView("settings");
+  $("#setProvider").onchange = onProviderChange;
+  $("#fetchModelsBtn").onclick = fetchProviderModels;
+  $("#testProviderBtn").onclick = testProvider;
+  $("#saveSettingsBtn").onclick = saveSettings;
+  checkSetup();
 
   const params = new URLSearchParams(location.search);
   const initialView = params.get("view");

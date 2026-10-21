@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.9.0 — 2026-10-21
+
+- 新增 9 个服务商预设（通义、OpenAI、DeepSeek、Kimi、智谱、OpenRouter、SiliconFlow、Ollama、自定义）
+- 设置页：服务商选择、Base URL、Key、动态拉取模型列表、测试连接
+- 首次运行检测缺少 Key 时显示配置提示
+- 保存配置时空 Key 不再覆盖已有 Key
+- 新增 `/api/providers`、`/api/providers/models`、`/api/providers/test`
+
 ## 1.8.1 — 2026-10-21
 
 - 检索置信度校准：疑问词/停用词不再计入覆盖度，混合检索增加向量门槛

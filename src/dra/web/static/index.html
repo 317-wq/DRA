@@ -22,6 +22,7 @@
       <button class="nav-item active" data-view="research">研究</button>
       <button class="nav-item" data-view="history">研究历史</button>
       <button class="nav-item" data-view="kb">知识库</button>
+      <button class="nav-item" data-view="settings">设置</button>
     </nav>
     <div class="sec">最近研究</div>
     <div id="history" class="history"></div>
@@ -36,6 +37,11 @@
       </div>
       <div id="runBadge" class="badge idle">就绪</div>
     </header>
+
+    <div id="setupBanner" class="setup-banner" hidden>
+      <span>还没有配置模型或搜索 Key，先完成配置再开始研究。</span>
+      <button id="setupGo" class="primary">去配置</button>
+    </div>
 
     <div id="view-research" class="view research-view">
       <div class="research-layout">
@@ -109,6 +115,54 @@
         <aside class="kb-detail" id="kbDetail">
           <div class="empty">点击左侧文档查看分块与内容。</div>
         </aside>
+      </div>
+    </div>
+
+    <div id="view-settings" class="view settings-view" hidden>
+      <div class="settings-card">
+        <h2>模型服务</h2>
+        <p class="settings-sub">选择服务商后会自动填好 Base URL；模型列表可以自动拉取。</p>
+        <div class="form-grid">
+          <label>服务商
+            <select id="setProvider"></select>
+          </label>
+          <label>Base URL
+            <input id="setBaseUrl" placeholder="https://api.example.com/v1" spellcheck="false">
+          </label>
+          <label>API Key
+            <input id="setApiKey" type="password" placeholder="粘贴 API Key" autocomplete="off">
+          </label>
+          <label>模型
+            <input id="setModel" list="modelOptions" placeholder="qwen3.8-max" spellcheck="false">
+            <datalist id="modelOptions"></datalist>
+          </label>
+        </div>
+        <div class="settings-actions">
+          <button id="fetchModelsBtn" class="ghost-btn">拉取模型列表</button>
+          <button id="testProviderBtn" class="ghost-btn">测试连接</button>
+          <span id="testStatus" class="settings-status"></span>
+        </div>
+
+        <h2>搜索服务</h2>
+        <p class="settings-sub">研究报告的检索来源，目前支持 Tavily。</p>
+        <div class="form-grid">
+          <label>Tavily API Key
+            <input id="setTavily" type="password" placeholder="tvly-..." autocomplete="off">
+          </label>
+        </div>
+
+        <h2>质量</h2>
+        <div class="form-grid">
+          <label>数字可核验阈值
+            <input id="setMinSupport" type="number" min="0" max="1" step="0.05">
+          </label>
+        </div>
+
+        <div class="settings-actions">
+          <button id="saveSettingsBtn" class="primary">保存配置</button>
+          <span id="settingsHint" class="settings-status"></span>
+        </div>
+        <p class="settings-foot">Key 保存在本机配置文件（权限 0600），不会上传到任何服务器。</p>
       </div>
     </div>
   </main>

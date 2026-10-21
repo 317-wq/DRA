@@ -29,6 +29,7 @@ from dra.ingest import IngestError, extract_text, kind_for
 from dra.jobs import BusyError, RunManager, read_all_events, read_new_events
 from dra.kb import KnowledgeBase
 from dra.llm import ModelAdapter
+from dra.providers import ProviderError, fetch_models, provider_list, test_chat
 
 RUN_ID_RE = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")
 
@@ -53,6 +54,15 @@ class FollowupRequest(BaseModel):
 class ContinueRequest(BaseModel):
     questions: list[str] = Field(min_length=1, max_length=4)
     max_sources: int = Field(default=6, ge=1, le=20)
+
+
+class ProviderModelsRequest(BaseModel):
+    base_url: str = Field(min_length=1, max_length=300)
+    api_key: str | None = None
+
+
+class ProviderTestRequest(ProviderModelsRequest):
+    model: str = Field(min_length=1, max_length=200)
 
 
 class SettingsPatch(BaseModel):
@@ -296,6 +306,27 @@ def create_app(
             raise HTTPException(status_code=404, detail="追问不存在") from exc
         return {"meta": meta, "answer": answer, "html": markdown.render(answer)}
 
+    @app.get("/api/providers")
+    def providers() -> dict[str, Any]:
+        return {"providers": provider_list()}
+
+    @app.post("/api/providers/models")
+    def provider_models(body: ProviderModelsRequest) -> dict[str, Any]:
+        key = body.api_key or settings.api_key
+        try:
+            models = fetch_models(body.base_url, key)
+        except ProviderError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"models": models}
+
+    @app.post("/api/providers/test")
+    def provider_test(body: ProviderTestRequest) -> dict[str, Any]:
+        key = body.api_key or settings.api_key
+        try:
+            return test_chat(body.base_url, key, body.model)
+        except ProviderError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.get("/api/settings")
     def get_settings() -> dict[str, Any]:
         current = Settings()
@@ -306,6 +337,8 @@ def create_app(
         data["write_model"] = current.write_model_resolved
         data["fallback_models"] = current.fallback_models
         data["min_number_support"] = current.min_number_support
+        data["api_key_set"] = bool(current.api_key)
+        data["tavily_key_set"] = bool(current.tavily_api_key)
         data["config_file"] = str(config_path())
         data["restart_required_hint"] = "修改后新任务生效，已启动的服务需重启"
         return data
@@ -313,7 +346,12 @@ def create_app(
     @app.put("/api/settings")
     def update_settings(body: SettingsPatch) -> dict[str, Any]:
         values = load_toml()
-        patch = body.model_dump(exclude_none=True)
+        # 空字符串表示“不修改”，避免前端留空把已配置的 Key 清掉
+        patch = {
+            key: value
+            for key, value in body.model_dump(exclude_none=True).items()
+            if value != ""
+        }
         if not patch:
             return {"updated": [], "path": str(config_path()), "reloaded": []}
         values.update(patch)
