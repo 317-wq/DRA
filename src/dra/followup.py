@@ -31,6 +31,8 @@ FOLLOWUP_ID_RE = re.compile(r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")
 @dataclass
 class FollowupResult:
     parent_id: str
+    parent_run_id: str
+    parent_followup: str | None
     followup_id: str
     question: str
     answer: str
@@ -57,24 +59,28 @@ class FollowupEngine:
         question = question.strip()
         if not question:
             raise ValueError("追问不能为空")
-        run = self.store.open(parent_id)
-        meta = self._read_json(run.dir / "run.json")
+        run, meta, excerpt_path, parent_followup = self._resolve(parent_id)
         if meta.get("status") == "running":
             raise ValueError("这次研究还在进行中，等它结束再追问")
-        report_path = run.dir / "report.md"
-        if not report_path.exists():
-            raise ValueError("这次研究没有报告，无法追问")
+        if not excerpt_path.exists():
+            raise ValueError("父级内容不存在，无法追问")
         sources_raw = self._read_json(run.dir / "sources.json")
         sources = [Source(**item) for item in sources_raw]
         if not sources:
             raise ValueError("这次研究没有可用的来源")
 
-        selected = self._select(question, sources, k)
+        # 追问树：用“父追问 + 新问题”一起选证据，避免上下文丢失
+        parent_question = ""
+        if parent_followup:
+            parent_meta = self._read_json(excerpt_path.parent / "meta.json", default={})
+            parent_question = str(parent_meta.get("question") or "")
+        selection_query = f"{parent_question} {question}".strip()
+        selected = self._select(selection_query, sources, k)
         started = time.monotonic()
         res = self.llm.chat(
             followup_messages(
                 topic=meta.get("topic") or parent_id,
-                report_excerpt=report_path.read_text(encoding="utf-8"),
+                report_excerpt=excerpt_path.read_text(encoding="utf-8"),
                 sources=selected,
                 question=question,
             ),
@@ -89,9 +95,10 @@ class FollowupEngine:
         fid = datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(2)
         folder = run.dir / "followups" / fid
         folder.mkdir(parents=True, exist_ok=True)
+        origin = "的追问" if parent_followup else ""
         header = (
             f"# 追问：{question}\n\n"
-            f"> 基于《{meta.get('topic') or parent_id}》 ｜ 引用 {len(cited)} 篇 ｜ "
+            f"> 基于《{meta.get('topic') or run.id}》{origin} ｜ 引用 {len(cited)} 篇 ｜ "
             f"{datetime.now().strftime('%Y-%m-%d')}\n\n"
         )
         answer = header + body
@@ -99,6 +106,8 @@ class FollowupEngine:
         duration = round(time.monotonic() - started, 1)
         record = {
             "id": fid,
+            "parent_run_id": run.id,
+            "parent_followup": parent_followup,
             "question": question,
             "created_at": datetime.now().isoformat(timespec="seconds"),
             "chars": count_chinese_chars(answer),
@@ -115,6 +124,8 @@ class FollowupEngine:
         self._update_index(run, record)
         return FollowupResult(
             parent_id=parent_id,
+            parent_run_id=run.id,
+            parent_followup=parent_followup,
             followup_id=fid,
             question=question,
             answer=answer,
@@ -126,8 +137,11 @@ class FollowupEngine:
 
     # -------------------------------------------------------------- read
     def list(self, parent_id: str) -> list[dict[str, Any]]:
-        run = self.store.open(parent_id)
-        return self._read_json(run.dir / "followups.json", default=[])
+        run, _, _, parent_followup = self._resolve(parent_id)
+        items = self._read_json(run.dir / "followups.json", default=[])
+        if parent_followup:
+            items = [item for item in items if item.get("parent_followup") == parent_followup]
+        return items
 
     def get(self, parent_id: str, followup_id: str) -> tuple[dict[str, Any], str]:
         if not FOLLOWUP_ID_RE.match(followup_id):
@@ -141,6 +155,28 @@ class FollowupEngine:
         return self._read_json(meta_path), answer_path.read_text(encoding="utf-8")
 
     # ------------------------------------------------------------- helpers
+    def _resolve(self, parent_id: str) -> tuple[Run, dict[str, Any], Path, str | None]:
+        """父级可以是 run，也可以是一条追问；返回 (run, run_meta, 上下文文件, 父追问 id)。"""
+        try:
+            run = self.store.open(parent_id)
+            meta = self._read_json(run.dir / "run.json")
+            return run, meta, run.dir / "report.md", None
+        except FileNotFoundError:
+            pass
+        if not FOLLOWUP_ID_RE.match(parent_id):
+            raise FileNotFoundError(f"找不到父级：{parent_id}")
+        for run_dir in self.store.root.iterdir():
+            folder = run_dir / "followups" / parent_id
+            meta_path = folder / "meta.json"
+            if not meta_path.exists():
+                continue
+            try:
+                run = self.store.open(run_dir.name)
+            except FileNotFoundError:
+                continue
+            return run, self._read_json(run.dir / "run.json"), folder / "answer.md", parent_id
+        raise FileNotFoundError(f"找不到追问：{parent_id}")
+
     def _select(self, question: str, sources: list[Source], k: int) -> list[Source]:
         texts = [f"{src.title} {src.snippet}" for src in sources]
         scores = bm25_scores(question, texts)
