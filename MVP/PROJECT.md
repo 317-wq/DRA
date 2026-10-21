@@ -1,6 +1,6 @@
 # PROJECT · 深度研究代理（Deep Research Agent）
 
-> 基线版本：v1.11
+> 基线版本：v1.12
 > 最后更新：2026-10-20
 > 说明：本文档只放跨版本稳定的内容（目标架构、技术原则、稳定接口）。
 > 版本范围、依赖与验收见对应的 `MVP-x.y.md`。
@@ -84,7 +84,8 @@
 - CLI 入口：`dra init` 配置、`dra doctor` 自检、`dra run "<主题>"` 发起研究、`dra show <run_id>` 查看报告与轨迹、`dra list` 列出历史 Run、`dra ui` 打开本地界面。
 - 本地界面：只监听 `127.0.0.1`，自动开浏览器；不提供远程访问、不做多用户。
 - HTTP 接口：`GET /`、`GET/POST /api/runs`、`GET /api/runs/{id}`、`/report`、`/sources`、`/trace`、`/events`（SSE）。
-- 任务模型：本地单用户、单 worker 串行；连续发起进入队列，运行中返回 409 仅用于严格互斥调用。
+- 任务模型：本地单用户、单 worker 串行；连续发起进入持久队列（`runs/.jobs.sqlite3`），
+  重启后 queued 自动重新入队、running 标 interrupted；运行中返回 409 仅用于严格互斥调用。
 - Run 状态：`queued / running / done / partial / failed / cancelled / interrupted`；重启时遗留的 queued/running 标记为 interrupted。
 - 管理接口：`GET /healthz`、分页 `GET /api/runs`、`DELETE /api/runs/{id}`、`/export`、`/cancel`、`/retry`、`GET/PUT /api/settings`。
 - 知识库：`dra kb add|import|list|search|show|remove`；存储为单个 `kb.sqlite3`（默认 `data_dir/kb.sqlite3`，可用 `DRA_KB_PATH` 覆盖）。
@@ -131,6 +132,7 @@
 |---|---|---|
 | v1.0 | 2026-10-20 | 初版：从架构图与 `5.html` 原型提取目标架构、技术原则与稳定接口 |
 | v1.1 | 2026-10-20 | 模型适配层增加思考开关（默认关闭）：单次研究 245s → 70s，三角色默认 `qwen3.8-max`；报告收尾对引用 URL 做可达性复核（`link_status`） |
+| v1.12 | 2026-10-21 | 后端补全：持久任务队列、重启恢复、设置热加载 |
 | v1.11 | 2026-10-21 | 桌面便携版：desktop 入口、Tk 控制窗口、PyInstaller 打包与 Release 自动构建 |
 | v1.10 | 2026-10-21 | 后端加固：任务队列、取消、重试、重启恢复、原子写、管理 API 与设置读写 |
 | v1.9 | 2026-10-21 | 1.0 发布基线：PyPI 元数据、MIT License、Release 工作流、安装与升级文档 |
