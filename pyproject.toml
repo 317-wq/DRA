@@ -1,6 +1,6 @@
 [project]
 name = "dra-research"
-version = "1.7.1"
+version = "1.8.0"
 description = "Deep Research Agent — 本地运行的研究报告生成工具（BYOK）"
 readme = "README.md"
 license = { file = "LICENSE" }
