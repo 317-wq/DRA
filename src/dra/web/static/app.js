@@ -979,7 +979,10 @@ async function loadKbDoc(docId) {
     const doc = data.document || {};
     const chunks = data.chunks || [];
     box.innerHTML = `<div class="kb-detail-head">
-        <h3>${escapeHtml(doc.title)}</h3>
+        <div class="kb-detail-title">
+          <h3>${escapeHtml(doc.title)}</h3>
+          <button id="kbReindexBtn" class="ghost-btn">重建切块</button>
+        </div>
         <div class="kb-detail-meta">
           <span class="kind-pill ${escapeHtml(doc.kind || "note")}">${kindLabel(doc.kind)}</span>
           ${chunks.length} 块 · ${doc.embedded || 0} 已向量化
@@ -993,8 +996,24 @@ async function loadKbDoc(docId) {
           <pre>${escapeHtml(c.text)}</pre>
         </article>`).join("")}
       </div>`;
+    const reindexBtn = $("#kbReindexBtn");
+    if (reindexBtn) reindexBtn.onclick = () => reindexKbDoc(docId);
   } catch (e) {
     box.innerHTML = `<div class="empty">读取文档失败：${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function reindexKbDoc(docId) {
+  const btn = $("#kbReindexBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "重建中…"; }
+  try {
+    const res = await api(`/api/kb/${docId}/reindex`, { method: "POST" });
+    toast(`已重建 ${res.chunks} 个分块`);
+    await loadKb();
+    await loadKbDoc(docId);
+  } catch (e) {
+    toast(`重建失败：${e.message}`, true);
+    if (btn) { btn.disabled = false; btn.textContent = "重建切块"; }
   }
 }
 
@@ -1034,8 +1053,8 @@ async function searchKb() {
     const mode = `mode=${data.mode} · 关键词 ${data.keyword_hits} · 向量 ${data.vector_hits}`;
     box.innerHTML = `<div class="kb-stats">${mode}</div>` + data.hits.map((hit) => `<div class="kb-hit" data-doc="${hit.doc_id}">
         <div class="h"><b>${escapeHtml(hit.title)}</b><span>chunk ${hit.seq}</span>
-          <span class="score">${hit.score.toFixed(4)} (kw ${hit.keyword.toFixed(2)} / vec ${hit.vector.toFixed(2)})</span></div>
-        <div class="txt">${escapeHtml(hit.text.slice(0, 320))}</div>
+          <span class="score">${hit.score.toFixed(4)} (kw ${hit.keyword.toFixed(2)} / vec ${hit.vector.toFixed(2)})${hit.coverage ? ` · 覆盖 ${Math.round(hit.coverage * 100)}%` : ""}</span></div>
+        <div class="txt">${escapeHtml(hit.snippet || hit.text.slice(0, 320))}</div>
       </div>`).join("");
     box.querySelectorAll(".kb-hit").forEach((node) => {
       node.onclick = () => loadKbDoc(node.dataset.doc);
@@ -1148,6 +1167,12 @@ function init() {
   if (initialRun) loadRun(initialRun);
   const initialDoc = params.get("doc");
   if (initialDoc) loadKbDoc(initialDoc);
+  const initialQuery = params.get("q");
+  if (initialQuery) {
+    const box = $("#kbQuery");
+    if (box) box.value = initialQuery;
+    searchKb();
+  }
 
   window.addEventListener("beforeunload", closeStream);
 }
