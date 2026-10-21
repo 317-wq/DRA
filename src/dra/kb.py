@@ -220,6 +220,17 @@ class SearchHit:
     source_path: str | None = None
 
 
+def _decorate_document(doc: dict) -> dict:
+    """补充界面用的格式与来源信息。"""
+    suffix = Path(doc.get("source_path") or "").suffix.lower()
+    fmt = {".md": "MD", ".markdown": "MD", ".txt": "TXT", ".pdf": "PDF"}.get(suffix)
+    if not fmt:
+        fmt = "PDF" if doc.get("kind") == "pdf" else "MD"
+    doc["format"] = fmt
+    doc["origin"] = "研究沉淀" if doc.get("run_id") else "上传"
+    return doc
+
+
 class KnowledgeBase:
     """一个 SQLite 文件就是一个知识库。"""
 
@@ -422,7 +433,7 @@ class KnowledgeBase:
                 doc["category"] = category
                 tags = tag_list
             doc["tags"] = tags
-        return docs
+        return [_decorate_document(doc) for doc in docs]
 
     def get_document(self, doc_id: int) -> dict[str, Any] | None:
         """读取单篇文档及其全部分块（供界面查看）。"""
@@ -453,7 +464,7 @@ class KnowledgeBase:
             document["category"] = category
             tags = tag_list
         document["tags"] = tags
-        return {"document": document, "chunks": [dict(item) for item in chunks]}
+        return {"document": _decorate_document(document), "chunks": [dict(item) for item in chunks]}
 
     def stats(self) -> dict[str, Any]:
         doc_count = self._conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
