@@ -353,6 +353,8 @@ def create_app(
                     "run_id": hit.run_id,
                     "seq": hit.seq,
                     "text": hit.text,
+                    "snippet": hit.snippet,
+                    "coverage": hit.coverage,
                     "score": hit.score,
                     "keyword": hit.keyword,
                     "vector": hit.vector,
@@ -393,6 +395,17 @@ def create_app(
             "category": document.get("category", ""),
             "tags": document.get("tags", []),
         }
+
+    @app.post("/api/kb/{doc_id}/reindex")
+    def kb_reindex(doc_id: int) -> dict[str, Any]:
+        kb = kb_factory()
+        try:
+            chunks = kb.reindex_document(doc_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        finally:
+            kb.close()
+        return {"doc_id": doc_id, "chunks": chunks}
 
     @app.get("/api/kb/{doc_id}")
     def kb_document(doc_id: int) -> dict[str, Any]:
