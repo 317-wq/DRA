@@ -44,6 +44,14 @@ class SinkRequest(BaseModel):
 class FollowupRequest(BaseModel):
     question: str = Field(min_length=1, max_length=300)
     k: int = Field(default=6, ge=1, le=12)
+    parent_followup: str | None = Field(
+        default=None, pattern=r"^[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$"
+    )
+
+
+class ContinueRequest(BaseModel):
+    questions: list[str] = Field(min_length=1, max_length=4)
+    max_sources: int = Field(default=6, ge=1, le=20)
 
 
 class SettingsPatch(BaseModel):
@@ -149,6 +157,15 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"run_id": new_id}
 
+    @app.post("/api/runs/{run_id}/continue", status_code=202)
+    def continue_run(run_id: str, body: ContinueRequest) -> dict[str, str]:
+        run_or_404(run_id)
+        try:
+            new_id = manager.start_continue(run_id, body.questions, body.max_sources)
+        except (BusyError, ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"run_id": new_id}
+
     @app.delete("/api/runs/{run_id}")
     def delete_run(run_id: str) -> dict[str, bool]:
         run_or_404(run_id)
@@ -231,12 +248,21 @@ def create_app(
     def ask_followup(run_id: str, body: FollowupRequest) -> dict[str, Any]:
         run_or_404(run_id)
         engine = followup_factory()
+        target = run_id
+        if body.parent_followup:
+            try:
+                engine.get(run_id, body.parent_followup)
+            except FileNotFoundError as exc:
+                raise HTTPException(status_code=404, detail="父追问不存在") from exc
+            target = body.parent_followup
         try:
-            result = engine.ask(run_id, body.question, k=body.k)
+            result = engine.ask(target, body.question, k=body.k)
         except (ValueError, FileNotFoundError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {
             "id": result.followup_id,
+            "parent_run_id": result.parent_run_id,
+            "parent_followup": result.parent_followup,
             "question": result.question,
             "cited_ns": result.cited_ns,
             "chars": result.chars,
