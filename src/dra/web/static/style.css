@@ -564,3 +564,34 @@ textarea:focus { border-color: #93b4f5; box-shadow: 0 0 0 4px rgba(59, 130, 246,
   .kb-detail { display: none; }
   .history-view { padding: 18px 16px 30px; }
 }
+
+/* ---------------- kb add / tags ---------------- */
+.kb-toolbar .kb-add { height: 40px; flex: 0 0 auto; white-space: nowrap; }
+.kb-filterbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.kb-filterbar select {
+  height: 34px; padding: 0 10px;
+  background: var(--surface); color: var(--text-2);
+  border: 1px solid var(--border-2); border-radius: 9px; outline: none;
+}
+.kb-filterbar select:focus { border-color: #93b4f5; }
+.kb-title-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.kb-title-line b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kind-pill {
+  flex: 0 0 auto; font-size: 9.5px; font-weight: 600;
+  padding: 1px 7px; border-radius: 20px;
+  background: var(--surface-3); color: var(--text-2);
+}
+.kind-pill.report { background: #ecfdf5; color: #15803d; }
+.kind-pill.pdf { background: #fef2f2; color: #b91c1c; }
+.kind-pill.note { background: #eff6ff; color: #2563eb; }
+.kind-pill.web { background: #f5f3ff; color: #7c3aed; }
+.tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+.tag {
+  font-size: 9.5px; padding: 1px 7px; border-radius: 20px;
+  background: var(--surface-2); color: var(--text-3); border: 1px solid var(--border);
+}
+.cat-tag {
+  font-size: 9.5px; font-weight: 600; padding: 1px 7px; border-radius: 20px;
+  background: var(--accent-soft); color: var(--accent); border: 1px solid #dbeafe;
+}
+.kb-detail-head .tags { margin-top: 10px; }
