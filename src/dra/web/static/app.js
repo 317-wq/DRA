@@ -22,6 +22,8 @@ const state = {
   meta: null,
   followups: [],
   evalData: null,
+  kbDocs: [],
+  kbCategory: "",
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -900,42 +902,73 @@ async function historyAction(runId, action, card) {
 }
 
 /* ---------------- knowledge base ---------------- */
+const KIND_LABELS = { report: "研究沉淀", pdf: "PDF", note: "笔记", web: "网页收藏" };
+
+function kindLabel(kind) { return KIND_LABELS[kind] || "文档"; }
+
+function tagsHtml(tags, cls = "tag") {
+  return (tags || []).map((tag) => `<span class="${cls}">${escapeHtml(tag)}</span>`).join("");
+}
+
 async function loadKb() {
   const statsBox = $("#kbStats");
   try {
     const data = await api("/api/kb");
     const stats = data.stats || {};
+    state.kbDocs = data.documents || [];
     statsBox.textContent = `${stats.documents || 0} 篇 · ${stats.chunks || 0} 块 · ${stats.embedded || 0} 已向量化`;
-    const docs = data.documents || [];
-    const wrap = $("#kbDocs");
-    if (!docs.length) {
-      wrap.innerHTML = `<div class="empty">知识库是空的。先在报告页点“沉淀到知识库”。</div>`;
-      return;
+
+    const select = $("#kbCategory");
+    if (select) {
+      const categories = [...new Set(state.kbDocs.map((doc) => doc.category).filter(Boolean))];
+      const current = state.kbCategory;
+      select.innerHTML = `<option value="">全部分类</option>` +
+        categories.map((cat) => `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`).join("");
+      if (categories.includes(current)) select.value = current;
+      else { state.kbCategory = ""; select.value = ""; }
     }
-    wrap.innerHTML = docs.map((doc) => `<div class="kb-doc" data-doc="${doc.id}">
-        <div class="main"><b>${escapeHtml(doc.title)}</b>
-          <div class="m">${doc.chunk_count} 块 · ${doc.embedded} 已向量化 · ${escapeHtml(doc.run_id || "")}</div>
-        </div>
-        <button class="link-btn" data-del="${doc.id}">删除</button>
-      </div>`).join("");
-    wrap.querySelectorAll(".kb-doc").forEach((node) => {
-      node.onclick = () => loadKbDoc(node.dataset.doc);
-    });
-    wrap.querySelectorAll("button[data-del]").forEach((btn) => {
-      btn.onclick = async (event) => {
-        event.stopPropagation();
-        if (!confirm("从知识库删除这份文档？")) return;
-        try {
-          await api(`/api/kb/${btn.dataset.del}`, { method: "DELETE" });
-          toast("已删除");
-          $("#kbDetail").innerHTML = `<div class="empty">点击左侧文档查看分块与内容。</div>`;
-          loadKb();
-        } catch (e) { toast(`删除失败：${e.message}`, true); }
-      };
-    });
+    renderKbDocs();
   } catch (e) {
     statsBox.textContent = `读取知识库失败：${e.message}`;
   }
+}
+
+function renderKbDocs() {
+  const wrap = $("#kbDocs");
+  if (!wrap) return;
+  const docs = state.kbCategory
+    ? state.kbDocs.filter((doc) => doc.category === state.kbCategory)
+    : state.kbDocs;
+  if (!docs.length) {
+    wrap.innerHTML = `<div class="empty">${state.kbCategory ? "这个分类下没有文档。" : "知识库是空的。点“添加文档”，或在报告页沉淀。"}</div>`;
+    return;
+  }
+  wrap.innerHTML = docs.map((doc) => `<div class="kb-doc" data-doc="${doc.id}">
+      <div class="main">
+        <div class="kb-title-line">
+          <b>${escapeHtml(doc.title)}</b>
+          <span class="kind-pill ${escapeHtml(doc.kind || "note")}">${kindLabel(doc.kind)}</span>
+        </div>
+        <div class="m">${doc.chunk_count} 块 · ${doc.embedded} 已向量化${doc.run_id ? ` · ${escapeHtml(doc.run_id)}` : ""}</div>
+        <div class="tags">${tagsHtml((doc.tags || []).filter((tag) => tag !== doc.category))}${doc.category ? `<span class="cat-tag">${escapeHtml(doc.category)}</span>` : ""}</div>
+      </div>
+      <button class="link-btn" data-del="${doc.id}">删除</button>
+    </div>`).join("");
+  wrap.querySelectorAll(".kb-doc").forEach((node) => {
+    node.onclick = () => loadKbDoc(node.dataset.doc);
+  });
+  wrap.querySelectorAll("button[data-del]").forEach((btn) => {
+    btn.onclick = async (event) => {
+      event.stopPropagation();
+      if (!confirm("从知识库删除这份文档？")) return;
+      try {
+        await api(`/api/kb/${btn.dataset.del}`, { method: "DELETE" });
+        toast("已删除");
+        $("#kbDetail").innerHTML = `<div class="empty">点击左侧文档查看分块与内容。</div>`;
+        loadKb();
+      } catch (e) { toast(`删除失败：${e.message}`, true); }
+    };
+  });
 }
 
 async function loadKbDoc(docId) {
@@ -948,9 +981,11 @@ async function loadKbDoc(docId) {
     box.innerHTML = `<div class="kb-detail-head">
         <h3>${escapeHtml(doc.title)}</h3>
         <div class="kb-detail-meta">
+          <span class="kind-pill ${escapeHtml(doc.kind || "note")}">${kindLabel(doc.kind)}</span>
           ${chunks.length} 块 · ${doc.embedded || 0} 已向量化
           ${doc.run_id ? ` · 来自 ${escapeHtml(doc.run_id)}` : ""}
         </div>
+        <div class="tags">${tagsHtml((doc.tags || []).filter((tag) => tag !== doc.category))}${doc.category ? `<span class="cat-tag">${escapeHtml(doc.category)}</span>` : ""}</div>
       </div>
       <div class="kb-chunks">
         ${chunks.map((c) => `<article class="kb-chunk">
@@ -960,6 +995,28 @@ async function loadKbDoc(docId) {
       </div>`;
   } catch (e) {
     box.innerHTML = `<div class="empty">读取文档失败：${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function uploadKb(file) {
+  if (!file) return;
+  const addBtn = $("#kbAddBtn");
+  if (addBtn) { addBtn.disabled = true; addBtn.textContent = "上传中…"; }
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    const resp = await fetch("/api/kb/upload", { method: "POST", body: form });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || resp.statusText);
+    toast(`已添加「${data.title}」${data.tags && data.tags.length ? ` · ${data.tags.join(" / ")}` : ""}`);
+    await loadKb();
+    await loadKbDoc(data.doc_id);
+  } catch (e) {
+    toast(`上传失败：${e.message}`, true);
+  } finally {
+    if (addBtn) { addBtn.disabled = false; addBtn.textContent = "＋ 添加文档"; }
+    const input = $("#kbFile");
+    if (input) input.value = "";
   }
 }
 
@@ -1063,6 +1120,15 @@ function init() {
     btn.onclick = () => showView(btn.dataset.view);
   });
   $("#kbSearchBtn").onclick = searchKb;
+  const addBtn = $("#kbAddBtn");
+  if (addBtn) addBtn.onclick = () => $("#kbFile").click();
+  const fileInput = $("#kbFile");
+  if (fileInput) fileInput.onchange = () => uploadKb(fileInput.files[0]);
+  const category = $("#kbCategory");
+  if (category) category.onchange = () => {
+    state.kbCategory = category.value;
+    renderKbDocs();
+  };
   $("#kbQuery").addEventListener("keydown", (e) => {
     if (e.key === "Enter") searchKb();
   });
