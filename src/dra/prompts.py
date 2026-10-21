@@ -5,11 +5,18 @@ from __future__ import annotations
 from dra.models import Source, SubQuestion
 
 
-def plan_messages(topic: str, n: int = 4) -> list[dict[str, str]]:
-    """构造拆题提示词。"""
+def plan_messages(topic: str, n: int = 4, parent_report: str = "") -> list[dict[str, str]]:
+    """构造拆题提示词；有父报告时优先补缺口。"""
     system = "你是深度研究规划器。你只输出 JSON，不输出任何解释或 Markdown 围栏。"
-    user = f"""研究主题：{topic}
+    parent_block = ""
+    if parent_report:
+        parent_block = f"""
 
+上一版报告（只用于找缺口，不要重复已有结论）：
+{parent_report[:2500]}
+"""
+    user = f"""研究主题：{topic}
+{parent_block}
 把主题拆成 {n} 个互补、可独立检索的子问题，覆盖：核心概念与现状、关键方案/玩家、对比维度、争议与风险。
 子问题之间不要重叠。
 
@@ -22,6 +29,7 @@ def plan_messages(topic: str, n: int = 4) -> list[dict[str, str]]:
    用 `site:arxiv.org`、`site:github.com`，或该领域官方文档域名。不要只给"对比/推荐/2026"。
 6. 量化/基准类子问题再补一条指向基准项目的检索式：ANN-Benchmarks、VectorDBBench，
    或厂商官方 benchmark 文档（如 `docs.weaviate.io/weaviate/benchmarks`、`qdrant.tech/benchmarks`）。
+7. 如果给了上一版报告，子问题要优先补它没覆盖或证据不足的部分，不要重复已有结论。
 
 只输出 JSON：
 {{"subquestions":[{{"id":1,"question":"...","queries":["...","..."]}}]}}"""
@@ -111,6 +119,7 @@ def write_messages(
     sources: list[Source],
     *,
     words: str = "1800-3000",
+    parent_report: str = "",
 ) -> list[dict[str, str]]:
     """构造报告写作提示词。"""
     system = (
@@ -133,8 +142,14 @@ def write_messages(
         evidence.append((src.snippet or "")[:600])
         evidence.append("")
 
+    parent_block = ""
+    if parent_report:
+        parent_block = f"""
+上一版报告（继承上下文，不要照抄；只保留仍然成立的结论）：
+{parent_report[:3000]}
+"""
     user = f"""研究主题：{topic}
-
+{parent_block}
 研究结论（按子问题整理）：
 {chr(10).join(analyses)}
 
@@ -155,7 +170,9 @@ def write_messages(
    找不到就写"资料未给出具体数值"或改用定性表述，禁止自己换算、估算或四舍五入后再写。
 6. 覆盖度是 partial/gap 的部分，要明确写"本次检索的资料中未见…"或"缺少 X 维度的一手数据"；
    不要把"本次检索未覆盖"写成"行业不存在/完全空白"。
-7. 不要写"本文将……"这类开头，直接进入内容。"""
+7. 不要写"本文将……"这类开头，直接进入内容。
+8. 如果给了上一版报告：这是续写版，保留仍然成立的结论，重点补充新证据；
+   旧来源编号必须沿用，不得改变 [n] 的含义。"""
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
