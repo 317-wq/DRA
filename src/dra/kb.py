@@ -65,6 +65,32 @@ def tokenize(text: str) -> list[str]:
     return tokens
 
 
+STOP_TERMS = {
+    # 中文疑问词 / 功能词的 bigram
+    "为什", "什么", "么要", "怎么", "么样", "怎样", "如何", "哪些", "哪个",
+    "多少", "是否", "可以", "能否", "需要", "应该", "是什", "么是", "一下",
+    "介绍", "说明", "告诉", "请问", "我们", "你们", "他们", "这个", "那个",
+    "以及", "还有", "一个", "有什", "么做", "么用", "为要", "要学",
+    # 英文停用词
+    "what", "why", "how", "which", "who", "when", "where", "is", "are",
+    "the", "a", "an", "of", "to", "in", "on", "for", "and", "or", "with",
+    "do", "does", "did", "can", "could", "should", "would", "be", "been",
+    "being", "this", "that", "these", "those", "it", "its", "as", "at",
+    "by", "from", "about", "into", "over", "after", "before",
+}
+
+
+def content_terms(text: str) -> list[str]:
+    """只保留有信息量的查询词，去掉疑问词与功能词。"""
+    terms: list[str] = []
+    for term in tokenize(text):
+        if len(term) < 2 or term in STOP_TERMS:
+            continue
+        if term not in terms:
+            terms.append(term)
+    return terms
+
+
 def chunk_text(text: str, target: int = 700, overlap: int = 100) -> list[str]:
     """按小节与段落切块；跳过“参考资料”这类纯链接段。"""
     cleaned = re.sub(r"\r\n?", "\n", text or "").strip()
@@ -158,18 +184,18 @@ def focus_snippet(text: str, query: str, width: int = 320) -> str:
     return prefix + text[best_start : best_start + width] + suffix
 
 
-def term_coverage(query: str, text: str) -> float:
-    """查询词（CJK 二元组 / 英文词）在文本中的覆盖率。"""
-    terms = {term for term in tokenize(query) if len(term) >= 2}
-    if not terms:
+def term_coverage(query: str, text: str, terms: set[str] | None = None) -> float:
+    """实义查询词在文本中的覆盖率（疑问词不参与）。"""
+    wanted = terms if terms is not None else set(content_terms(query))
+    if not wanted:
         return 0.0
-    hits = sum(1 for term in terms if term in text)
-    return hits / len(terms)
+    hits = sum(1 for term in wanted if term in text)
+    return hits / len(wanted)
 
 
 def bm25_scores(query: str, texts: list[str], k1: float = 1.5, b: float = 0.75) -> list[float]:
     """对给定文本集合计算 BM25 分数。"""
-    q_terms = set(tokenize(query))
+    q_terms = set(content_terms(query)) or set(tokenize(query))
     if not q_terms:
         return [0.0] * len(texts)
     docs = [tokenize(t) for t in texts]
@@ -489,6 +515,16 @@ class KnowledgeBase:
         if not rows:
             return [], {"mode": "empty"}
 
+        terms = set(content_terms(query))
+        if not terms:
+            return [], {
+                "mode": "empty",
+                "keyword_hits": 0,
+                "vector_hits": 0,
+                "low_confidence": True,
+                "reason": "query_too_generic",
+            }
+
         texts = [row["text"] for row in rows]
         keyword_scores = bm25_scores(query, texts)
 
@@ -519,29 +555,36 @@ class KnowledgeBase:
         )
         fused = rrf_fuse([kw_rank, vec_rank])
         if not fused:
-            return [], {"mode": mode, "keyword_hits": 0, "vector_hits": 0}
+            return [], {
+                "mode": mode,
+                "keyword_hits": 0,
+                "vector_hits": 0,
+                "low_confidence": True,
+                "query_terms": sorted(terms),
+            }
 
-        # 用查询词覆盖率重排：RRF 只反映排名，不反映“这条到底答不答问题”
+        # 用实义查询词覆盖率重排：RRF 只反映排名，不反映“这条到底答不答问题”
         ranked = []
         for index, base in fused.items():
-            coverage = term_coverage(query, rows[index]["text"])
+            coverage = term_coverage(query, rows[index]["text"], terms)
             ranked.append((base + 0.012 * coverage, coverage, index))
         ranked.sort(reverse=True)
-        top_keyword = max((keyword_scores[index] for _, _, index in ranked), default=0.0)
+
+        def strong(cov: float, index: int) -> bool:
+            if mode == "hybrid":
+                # 只有一个泛词命中时，必须向量也够像；否则“学习”这种词会误伤
+                return vector_scores[index] >= 0.6 or (
+                    cov >= 0.45 and vector_scores[index] >= 0.45
+                )
+            return cov >= 0.5
 
         hits = []
         for score, coverage, index in ranked:
             if len(hits) >= k:
                 break
-            # 弱相关结果直接截断：覆盖度、关键词强度、向量相似度至少一项要站得住
-            if hits:
-                strong = (
-                    coverage >= 0.4
-                    or keyword_scores[index] >= top_keyword * 0.35
-                    or vector_scores[index] >= 0.6
-                )
-                if not strong:
-                    break
+            # 首条也必须够强，否则整次检索判为低置信度，不返回“看起来像”的结果
+            if not strong(coverage, index):
+                break
             row = rows[index]
             hits.append(
                 SearchHit(
@@ -563,6 +606,8 @@ class KnowledgeBase:
             "mode": mode,
             "keyword_hits": len(kw_rank),
             "vector_hits": len(vec_rank),
+            "low_confidence": not hits,
+            "query_terms": sorted(terms),
         }
 
     def export_index(self) -> dict[str, Any]:

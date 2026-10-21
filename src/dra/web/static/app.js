@@ -970,13 +970,13 @@ function renderKbDocs() {
   }
   wrap.innerHTML = docs.map((doc) => `<div class="kb-doc" data-doc="${doc.id}">
       <div class="main">
-        <div class="kb-title-line"><b>${escapeHtml(doc.title)}</b></div>
+        <div class="kb-title-line">
+          <b>${escapeHtml(doc.title)}</b>
+          <span class="kind-pill format">${escapeHtml(doc.format || "MD")}</span>
+          <span class="kind-pill origin">${escapeHtml(doc.origin || "上传")}</span>
+        </div>
         <div class="m">${doc.chunk_count} 块 · ${doc.embedded} 已向量化${doc.run_id ? ` · ${escapeHtml(doc.run_id)}` : ""}</div>
         <div class="tags">${tagsHtml((doc.tags || []).filter((tag) => tag !== doc.category))}${doc.category ? `<span class="cat-tag">${escapeHtml(doc.category)}</span>` : ""}</div>
-      </div>
-      <div class="kb-doc-badges">
-        <span class="kind-pill format">${escapeHtml(doc.format || "MD")}</span>
-        <span class="kind-pill origin">${escapeHtml(doc.origin || "上传")}</span>
       </div>
       <button class="link-btn" data-del="${doc.id}">删除</button>
     </div>`).join("");
@@ -1074,7 +1074,11 @@ async function searchKb() {
   try {
     const data = await api(`/api/kb/search?q=${encodeURIComponent(query)}&k=6`);
     if (!data.hits || !data.hits.length) {
-      box.innerHTML = `<div class="empty">没有命中。</div>`;
+      box.innerHTML = `<div class="empty">${
+        data.low_confidence
+          ? "没有找到足够相关的内容。这个问题可能太泛，或者文档里没有对应信息。"
+          : "没有命中。"
+      }</div>`;
       return;
     }
     const mode = `mode=${data.mode} · 关键词 ${data.keyword_hits} · 向量 ${data.vector_hits}`;
