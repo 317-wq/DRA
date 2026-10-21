@@ -178,8 +178,12 @@ function handle(ev) {
   const p = ev.payload || {};
   switch (ev.type) {
     case "run.started":
+      state.meta = { ...(state.meta || {}), status: "running", topic: p.topic || state.meta?.topic };
       setBadge("running", "研究中");
       markStage(0, "active");
+      if (state.tab === "report" || state.tab === "sources" || state.tab === "followups") {
+        renderPanel();
+      }
       break;
     case "plan.ready":
       state.subqs = p.subquestions || [];
@@ -394,8 +398,9 @@ function renderPanel() {
   if (state.tab === "report") {
     if (!state.reportHtml) {
       const status = state.meta?.status || "";
+      const live = status === "running" || status === "queued";
       const notes = (state.meta?.notes || []).map((note) => `· ${escapeHtml(note)}`).join("<br>");
-      const text = status === "running" || status === "queued"
+      const text = live
         ? "研究进行中，报告生成后自动显示。"
         : `状态：${escapeHtml(statusLabel(status))}`;
       panel.innerHTML = `<div class="empty">${text}${notes ? `<br>${notes}` : ""}</div>`;
@@ -433,7 +438,8 @@ function renderPanel() {
 
   if (state.tab === "sources") {
     if (!state.sourceList.length) {
-      panel.innerHTML = `<div class="empty">还没有来源。研究完成后，这里按引用编号列出原文链接。</div>`;
+      const live = ["running", "queued"].includes(state.meta?.status);
+      panel.innerHTML = `<div class="empty">${live ? "研究进行中，来源会在检索阶段实时登记。" : "还没有来源。研究完成后，这里按引用编号列出原文链接。"}</div>`;
       return;
     }
     const rows = state.sourceList.map((s) => {
@@ -586,8 +592,9 @@ function renderFollowups() {
 function renderFollowupList() {
   const wrap = $("#qaList");
   if (!wrap) return;
+  const running = ["running", "queued"].includes(state.meta?.status);
   if (!state.followups.length) {
-    wrap.innerHTML = `<div class="empty">还没有追问。</div>`;
+    wrap.innerHTML = `<div class="empty">${running ? "研究完成后可以基于这份报告追问。" : "还没有追问。"}</div>`;
     return;
   }
   wrap.innerHTML = state.followups.map((item) => `<div class="qa-item" data-fid="${item.id}">
@@ -692,10 +699,13 @@ async function start() {
   state.traceKeys = new Set();
   state.evalData = null;
   state.evalTried = false;
+  state.sourceList = [];
+  state.followups = [];
+  state.meta = { run_id: null, topic, status: "queued", sources: [], notes: [] };
   renderStages();
   renderSubqs();
   $("#logs").innerHTML = "";
-  $("#panel").innerHTML = `<div class="empty">研究已启动，事件流会实时出现在左侧。</div>`;
+  selectTab("report");
   $("#startBtn").disabled = true;
   $("#hint").textContent = "研究进行中，通常 1–2 分钟。";
   try {
@@ -705,8 +715,9 @@ async function start() {
       body: JSON.stringify({ topic, max_sources: maxSources }),
     });
     state.runId = data.run_id;
+    state.meta = { run_id: data.run_id, topic, status: "queued", sources: [], notes: [] };
     $("#viewTitle").textContent = topic;
-    setBadge("running", "研究中");
+    setBadge("queued", "排队中");
     follow(data.run_id);
     renderHistory();
   } catch (e) {
