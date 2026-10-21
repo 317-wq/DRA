@@ -272,10 +272,16 @@ def create_app(
         values = load_toml()
         patch = body.model_dump(exclude_none=True)
         if not patch:
-            return {"updated": [], "path": str(config_path())}
+            return {"updated": [], "path": str(config_path()), "reloaded": []}
         values.update(patch)
         path = write_toml_config(values)
-        return {"updated": sorted(patch), "path": str(path), "restart_required": True}
+        reloaded = settings.apply_hot(Settings())
+        return {
+            "updated": sorted(patch),
+            "path": str(path),
+            "reloaded": reloaded,
+            "restart_required": False,
+        }
 
     @app.get("/api/kb")
     def kb_index() -> dict[str, Any]:
