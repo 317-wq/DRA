@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7fb">
   <title>Deep Research Agent</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -10,30 +11,40 @@
 <div class="app">
   <aside class="sidebar">
     <div class="brand">
-      <span class="logo">◆</span>
-      <div>
+      <div class="logo">◆</div>
+      <div class="brand-text">
         <b>Deep Research</b>
         <small>本地研究代理</small>
       </div>
     </div>
     <button id="newBtn" class="new">＋ 新研究</button>
     <nav class="nav">
-      <button class="nav-item active" data-view="research"><span>◧</span>研究</button>
-      <button class="nav-item" data-view="kb"><span>▤</span>知识库</button>
+      <button class="nav-item active" data-view="research">研究</button>
+      <button class="nav-item" data-view="kb">知识库</button>
     </nav>
-    <div class="sec">历史</div>
+    <div class="sec">历史记录</div>
     <div id="history" class="history"></div>
-    <div class="side-foot">仅监听 127.0.0.1 · 数据在本地</div>
+    <div class="side-foot"><span class="live-dot"></span>仅监听 127.0.0.1 · 数据留在本机</div>
   </aside>
 
   <main>
     <header class="topbar">
-      <div class="title" id="viewTitle">研究</div>
+      <div class="title-wrap">
+        <div class="title" id="viewTitle">研究</div>
+        <div class="subtitle">输入主题，Agent 自动拆题、检索并生成可溯源报告</div>
+      </div>
       <div id="runBadge" class="badge idle">就绪</div>
     </header>
 
     <div id="view-research" class="view">
       <section class="composer">
+        <div class="composer-head">
+          <div>
+            <h2>开始一次研究</h2>
+            <p>支持任意主题；报告里的每条结论都会标注来源编号。</p>
+          </div>
+          <span class="kbd-hint">Ctrl + Enter</span>
+        </div>
         <textarea id="topic" rows="2" placeholder="输入研究主题，例如：2026 年主流 Agent 记忆机制方案对比"></textarea>
         <div class="controls">
           <label>来源上限

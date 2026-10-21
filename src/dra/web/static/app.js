@@ -17,6 +17,8 @@ const state = {
   reportHtml: "",
   sourceList: [],
   trace: [],
+  traceKeys: new Set(),
+  evalTried: false,
   meta: null,
   followups: [],
   evalData: null,
@@ -135,6 +137,12 @@ function describe(ev) {
       return `覆盖不足，为 ${(p.queries || []).length} 个子问题补检索`;
     case "write.started":
       return `开始写作（${p.model}）`;
+    case "write.verify":
+      return `数字校对：可核验率 ${Math.round((p.support_rate || 0) * 100)}% · ${p.action}`;
+    case "write.verified":
+      return `质量评估：${p.score} 分（${p.grade}）· 可核验率 ${Math.round((p.support_rate || 0) * 100)}%`;
+    case "plan.reused":
+      return `继承父报告，补 ${(p.questions || []).length} 个新问题`;
     case "run.finished":
       return `结束：${p.status} · ${p.sources} 篇 · ${p.chars} 字`;
     case "run.failed":
@@ -148,7 +156,22 @@ function describe(ev) {
 }
 
 /* ---------------- event handling ---------------- */
+function traceKey(ev) {
+  const payload = JSON.stringify(ev.payload || {}).slice(0, 120);
+  return `${ev.ts || ""}|${ev.type || ""}|${ev.seq ?? ""}|${payload}`;
+}
+
+function rememberTrace(ev) {
+  const key = traceKey(ev);
+  if (state.traceKeys.has(key)) return;
+  state.traceKeys.add(key);
+  state.trace.push({ ...ev, seq: ev.seq ?? state.trace.length + 1 });
+  while (state.trace.length > 600) state.trace.shift();
+  if (state.tab === "trace") renderTrace(true);
+}
+
 function handle(ev) {
+  rememberTrace(ev);
   logLine(ev);
   const p = ev.payload || {};
   switch (ev.type) {
@@ -186,6 +209,9 @@ function handle(ev) {
     case "write.started":
       markStage(3, "done");
       markStage(4, "active");
+      break;
+    case "write.verified":
+      setStageNote(4, `质量 ${p.score ?? "-"} 分（${p.grade || "-"}）`);
       break;
     case "run.finished":
       finish(p);
@@ -291,6 +317,9 @@ async function loadRun(runId, options = {}) {
   state.meta = meta;
   state.sourceList = sources;
   state.trace = trace;
+  state.traceKeys = new Set(trace.map(traceKey));
+  state.evalData = evaluation;
+  state.evalTried = false;
   state.followups = followups.items || [];
   state.sources = sources.length;
   state.reportHtml = "";
@@ -299,28 +328,63 @@ async function loadRun(runId, options = {}) {
   setBadge(status, statusLabel(status));
 
   if (!options.keepStages) {
-    replayStages(trace);
+    replayStages(trace, status);
+  }
+  $("#logs").innerHTML = "";
+  if (status !== "running" && status !== "queued") {
+    trace.forEach(logLine);
   }
   if (status !== "running") {
     state.reportHtml = await fetch(`/api/runs/${runId}/report`).then((r) => r.ok ? r.text() : "");
   }
   renderPanel();
   renderHistory();
+  if (status === "running" || status === "queued") {
+    follow(runId);
+  }
 }
 
-function replayStages(trace) {
+function replayStages(trace, status = "") {
   renderStages();
   state.subqs = [];
   state.coverage = {};
   state.sources = 0;
   trace.forEach((ev) => {
     const p = ev.payload || {};
-    if (ev.type === "plan.ready") state.subqs = p.subquestions || [];
-    if (ev.type === "fetch.done") state.sources += (p.sources || []).length;
-    if (ev.type === "analysis.done") (p.items || []).forEach((i) => { state.coverage[i.id] = i.coverage; });
+    switch (ev.type) {
+      case "plan.ready":
+        state.subqs = p.subquestions || [];
+        markStage(0, "done");
+        markStage(1, "active");
+        setStageNote(0, `${state.subqs.length} 个子问题`);
+        break;
+      case "search.done":
+        markStage(1, "active");
+        if (p.ok) setStageNote(1, `最近：${String(p.query).slice(0, 28)} → ${p.hits} 条`);
+        break;
+      case "fetch.done":
+        state.sources += (p.sources || []).length;
+        markStage(2, "active");
+        setStageNote(2, `已登记 ${state.sources} 篇来源`);
+        break;
+      case "analysis.done":
+        (p.items || []).forEach((i) => { state.coverage[i.id] = i.coverage; });
+        markStage(2, "done");
+        markStage(3, "active");
+        break;
+      case "write.started":
+        markStage(3, "done");
+        markStage(4, "active");
+        break;
+      case "run.finished":
+        allDone();
+        break;
+      default:
+        break;
+    }
   });
   renderSubqs();
-  markStage(4, "done");
+  if (status && status !== "running" && status !== "queued") allDone();
 }
 
 function renderPanel() {
@@ -349,7 +413,7 @@ function renderPanel() {
       <span>${state.sourceList.length} 篇来源</span>
       <span>${meta.usage?.total_tokens || 0} token</span>
       <span>${meta.duration_s || 0}s</span>
-      ${actions.join("")}
+      <div class="meta-actions">${actions.join("")}</div>
     </div>`;
     panel.innerHTML = head + `<div class="report">${state.reportHtml}</div>`;
     const sinkBtn = $("#sinkBtn");
@@ -395,32 +459,75 @@ function renderPanel() {
   }
 
   if (state.tab === "trace") {
-    if (!state.trace.length) {
-      panel.innerHTML = `<div class="empty">还没有轨迹。</div>`;
-      return;
-    }
-    const rows = state.trace.map((ev) => `<tr>
-      <td class="num">${ev.seq ?? ""}</td>
-      <td class="stage">${escapeHtml(ev.stage || "")}</td>
-      <td>${escapeHtml(ev.type || "")}</td>
-      <td>${escapeHtml(describe(ev))}</td>
-      <td class="num">${ev.duration_ms ? (ev.duration_ms / 1000).toFixed(1) + "s" : ""}</td>
-    </tr>`).join("");
-    panel.innerHTML = `<table class="trace-table">
-      <thead><tr><th>#</th><th>阶段</th><th>事件</th><th>详情</th><th>耗时</th></tr></thead>
-      <tbody>${rows}</tbody></table>`;
+    renderTrace(false);
   }
 }
 
+function renderTrace(autoScroll = false) {
+  const panel = $("#panel");
+  const status = state.meta?.status || "";
+  const live = status === "running" || status === "queued";
+  if (!state.trace.length) {
+    panel.innerHTML = `<div class="empty">${live ? "正在等待第一个事件…" : "这次运行没有留下轨迹。"}</div>`;
+    return;
+  }
+  const rows = state.trace.map((ev) => `<tr>
+      <td class="num">${ev.seq ?? ""}</td>
+      <td class="time">${escapeHtml(clock(ev.ts))}</td>
+      <td><span class="stage-pill">${escapeHtml(ev.stage || "-")}</span></td>
+      <td class="ev">${escapeHtml(ev.type || "")}</td>
+      <td>${escapeHtml(describe(ev))}</td>
+      <td class="num">${ev.duration_ms ? (ev.duration_ms / 1000).toFixed(1) + "s" : ""}</td>
+    </tr>`).join("");
+  const liveBadge = live ? `<span class="live-pill"><i></i>实时</span>` : "";
+  panel.innerHTML = `<div class="trace-head">
+      <span>共 ${state.trace.length} 条事件</span>${liveBadge}
+    </div>
+    <table class="trace-table">
+      <thead><tr><th>#</th><th>时间</th><th>阶段</th><th>事件</th><th>详情</th><th>耗时</th></tr></thead>
+      <tbody>${rows}</tbody></table>`;
+  if (autoScroll) panel.scrollTop = panel.scrollHeight;
+}
+
 /* ---------------- quality ---------------- */
+async function refreshEval() {
+  if (!state.runId) return;
+  try {
+    state.evalData = await api(`/api/runs/${state.runId}/eval`);
+  } catch (e) {
+    toast(`质量评估失败：${e.message}`, true);
+  }
+  renderPanel();
+}
+
 function renderQuality() {
   const panel = $("#panel");
   const data = state.evalData;
   if (!data) {
-    panel.innerHTML = `<div class="empty">这次运行还没有可评估的报告。</div>`;
+    const status = state.meta?.status || "";
+    const running = status === "running" || status === "queued";
+    if (running) {
+      panel.innerHTML = `<div class="quality-wait">
+        <div class="spinner"></div>
+        <b>研究报告生成后自动计算质量</b>
+        <span>引用覆盖 · 数字可核验 · 来源多样性</span>
+      </div>`;
+      return;
+    }
+    panel.innerHTML = `<div class="quality-wait">
+      <b>还没有质量评估</b>
+      <span>报告已生成，可以立即评估一次。</span>
+      <button id="evalBtn" class="primary">立即评估</button>
+    </div>`;
+    const btn = $("#evalBtn");
+    if (btn) btn.onclick = refreshEval;
+    if (!state.evalTried) {
+      state.evalTried = true;
+      refreshEval();
+    }
     return;
   }
-  const gradeColor = { A: "#86efac", B: "#93c5fd", C: "#fcd34d", D: "#fca5a5" }[data.grade] || "#e4e9f0";
+  const gradeColor = { A: "#15803d", B: "#2563eb", C: "#b45309", D: "#b91c1c" }[data.grade] || "#334155";
   const warnings = (data.warnings || []).length
     ? `<div class="warn-box">${data.warnings.map((w) => `· ${escapeHtml(w)}`).join("<br>")}</div>`
     : "";
@@ -455,7 +562,7 @@ function renderFollowups() {
     panel.innerHTML = `<div class="empty">先打开一次研究，再基于它追问。</div>`;
     return;
   }
-  const running = state.meta?.status === "running";
+  const running = ["running", "queued"].includes(state.meta?.status);
   panel.innerHTML = `
     <div class="qa-box">
       <input id="qaInput" placeholder="基于这份报告追问，例如：那成本呢？" ${running ? "disabled" : ""}>
@@ -576,6 +683,10 @@ async function start() {
   state.coverage = {};
   state.sources = 0;
   state.reportHtml = "";
+  state.trace = [];
+  state.traceKeys = new Set();
+  state.evalData = null;
+  state.evalTried = false;
   renderStages();
   renderSubqs();
   $("#logs").innerHTML = "";
@@ -600,6 +711,14 @@ async function start() {
   }
 }
 
+function selectTab(name) {
+  state.tab = name;
+  document.querySelectorAll(".tab").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.tab === name);
+  });
+  renderPanel();
+}
+
 function resetView() {
   showView("research");
   closeStream();
@@ -609,6 +728,8 @@ function resetView() {
   state.sources = 0;
   state.reportHtml = "";
   state.trace = [];
+  state.traceKeys = new Set();
+  state.evalTried = false;
   state.sourceList = [];
   state.meta = null;
   state.followups = [];
@@ -773,13 +894,15 @@ function init() {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") start();
   });
   document.querySelectorAll(".tab").forEach((tab) => {
-    tab.onclick = () => {
-      document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
-      tab.classList.add("active");
-      state.tab = tab.dataset.tab;
-      renderPanel();
-    };
+    tab.onclick = () => selectTab(tab.dataset.tab);
   });
+
+  const params = new URLSearchParams(location.search);
+  const initialTab = params.get("tab");
+  if (initialTab) selectTab(initialTab);
+  const initialRun = params.get("run");
+  if (initialRun) loadRun(initialRun);
+
   window.addEventListener("beforeunload", closeStream);
 }
 
