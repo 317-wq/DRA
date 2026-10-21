@@ -82,6 +82,7 @@ def test_health_and_pagination(tmp_path):
     assert page["total"] == 2
     assert len(page["runs"]) == 1
     assert page["runs"][0]["topic"] in {"旧一点", "新一点"}
+    assert page["runs"][0]["chars"] > 0
 
     filtered = client.get("/api/runs", params={"status": "done"}).json()
     assert filtered["total"] == 2
