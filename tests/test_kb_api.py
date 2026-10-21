@@ -120,3 +120,31 @@ def test_kb_document_detail(tmp_path):
     assert detail["chunks"][0]["embedded"] == 1
 
     assert client.get("/api/kb/99999").status_code == 404
+
+
+def test_upload_markdown_with_auto_tags(tmp_path):
+    client, _ = build(tmp_path)
+    content = "# RAG 入门\n\n检索增强生成结合向量数据库与重排。".encode()
+    res = client.post(
+        "/api/kb/upload",
+        files={"file": ("rag-note.md", content, "text/markdown")},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["kind"] == "note"
+    assert body["chunks"] > 0
+    assert "RAG" in body["tags"] or "向量数据库" in body["tags"]
+
+    detail = client.get(f"/api/kb/{body['doc_id']}").json()
+    assert detail["document"]["category"]
+    assert detail["document"]["tags"]
+    assert detail["chunks"]
+
+
+def test_upload_rejects_unknown_type(tmp_path):
+    client, _ = build(tmp_path)
+    res = client.post(
+        "/api/kb/upload",
+        files={"file": ("payload.exe", b"MZ", "application/octet-stream")},
+    )
+    assert res.status_code == 400
